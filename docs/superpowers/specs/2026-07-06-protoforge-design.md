@@ -1,6 +1,6 @@
 # ProtoForge(原体锻炉)设计文档
 
-> 状态:草案 v0.3 · 算力策略 + LLM Provider 抽象 + 锻炉时间游戏化
+> 状态:草案 v0.4 · Tauri 桌面应用 + Python Sidecar 重大架构转向
 > 日期:2026-07-06
 > 作者:TRAE × 用户共创
 
@@ -25,10 +25,11 @@
 
 ### 1.4 关键约束(用户明确要求)
 
+- **产品形态(v0.4)**:终态是**桌面应用**(Tauri + Python Sidecar),可分发 .exe / .dmg / .AppImage;早期 Phase 1.5 可加 Web 试玩版(玩家仍本地跑);
+- **不上云 SaaS**:个人开发者不承担服务器成本(用户 2026-07-06 明确要求);
 - 所有产物放**项目目录**下,不动 C 盘(配置 `PROTO_HOME=/path/to/project/.proto`,pip/uv 缓存重定向);
-- **Docker 化**,一行命令起停;
 - 单人可维护,渐进推进;
-- 兼顾"未来可剥离为独立像素游戏"的扩展性;
+- 兼顾"未来可剥离为独立像素游戏 / 上 Steam"的扩展性(架构可携);
 - **算力策略(2026-07-06 修订)**:默认目标 = 消费级 8GB+ NVIDIA 独显(RTX 3060 及以上);无 GPU 走纯 CPU 降级路径,功能约 70% 可用(详见 §4.2)。
 
 ---
@@ -45,77 +46,154 @@
 
 ---
 
-## 3. 渐进三步走(核心范围)
+## 3. 渐进三步走(核心范围) — v0.4 产品形态重定位
 
-| Phase | 目标 | 工期 | 算力 | 验证强度 |
-|---|---|---|---|---|
-| **Phase 1:本地可玩** | 单机跑通"剧情 → 调参 → 评分 → 风险门"完整闭环 | 2-4 周 | 纯 CPU(几 GB 内存)+ Docker | 纯 in-silico |
-| **Phase 2:多关卡 + 作品墙** | 三个场景全开,玩家作品可本地浏览,Nat-Proto 接口 | 1-2 月 | 同上 + Ollama qwen2.5-3B | 纯 in-silico + 候选导出 |
-| **Phase 3:服务端化 + 社区** | Postgres + Redis 队列 + 用户系统,接 Stanford 社区 | 2-3 月 | 同上 + 可选 GPU worker | 候选列表提交,争取湿实验合作 |
-| **Phase 4(可选):独立像素游戏** | Phase 3 跑通后,Game architecture 切成 Godot + 像素 | 远期 | — | — |
+**v0.4 重大转向**:从 "Web 平台 + Docker 部署" 改为 "**Tauri 桌面应用 + Python Sidecar**"。原因(用户 2026-07-06 反馈):
+1. 终态产品必须是"装好即玩的桌面应用" —— 不可能让个人长期承担服务器成本;
+2. 上 Steam 时必须是单机可分发的游戏,不能依赖云后端;
+3. Web 形态作为**早期试玩版**(快上线),但 Phase 1 主流交付必须是桌面应用;
+4. 内部架构层做"可携型",未来换 Godot/Unity 时只换壳层。
 
-**当前本文档只锁定 Phase 1 的实现细节。** Phase 2-3 在文档中以"扩展点"形式标注接口,避免过度设计。
+| Phase | 目标 | 工期 | 算力 | 验证强度 | 交付形态 |
+|---|---|---|---|---|---|
+| **Phase 1:Tauri 桌面应用 + 1 关** | 单机跑通"剧情 → 调参 → 评分 → 风险门"完整闭环,玩家装 .exe / .dmg 即可玩 | 4-6 周 | 玩家本地,有 GPU 跑真 Proto | 纯 in-silico | Tauri 桌面应用(.exe / .dmg / .AppImage) |
+| **Phase 1.5:Web 试玩版(可选)** | 把 Phase 1 桌面应用内嵌 WebView 拆出来,玩家用浏览器试玩(无需安装) | 1-2 周 | 同上 | 同上 | Web 静态站 + 玩家本地 Python sidecar |
+| **Phase 2:多关卡 + LLM 助手** | 三个场景全开,玩家作品可本地浏览,Ollama/LM Studio/Claude 接口接好 | 1-2 月 | 同上 | 纯 in-silico + 候选导出 | 桌面应用 + Web 试玩 |
+| **Phase 3:作品社区** | 玩家方案可"打包导出"为 .protoforge 文件,在玩家间离线分享(类似 .stl 3D 模型文件) | 2-3 月 | 同上 | 候选列表 | 桌面应用 + 桌面应用内"作品市场" |
+| **Phase 4(可选):换 Godot 壳** | 把 Tauri 的 React 前端换成 Godot UI,做像素风 + Steam 发布 | 远期 | — | — | Godot 桌面应用 + Steam |
+
+**当前本文档只锁定 Phase 1(Tauri 桌面应用)的实现细节。** Phase 1.5+ 在文档中以"扩展点"形式标注接口,避免过度设计。
 
 ---
 
-## 4. 架构总览(Phase 1)
+## 4. 架构总览(Phase 1) — v0.4 Tauri + Python Sidecar
+
+### 4.0 形态决策(v0.4 新增)
+
+**产品形态 = Tauri 桌面应用 + Python Sidecar**,最终可分发的 .exe / .dmg / .AppImage 单文件。
+
+为什么是 Tauri 不是 Unity/Godot/Electron?(用户 2026-07-06 反馈 + 调研):
+
+| 方案 | 安装包 | Proto 集成 | Steam 友好 | 评价 |
+|---|---|---|---|---|
+| **Unity** | 100MB+ | C# 桥 Python 复杂 | ✅ 主流 | 商业许可门槛($20万/年) |
+| **Godot + py4godot** | 80MB | GDExtension 调 Python [($TRAE_REF)](https://blog.csdn.net/gitblog_01182/article/details/146974359) | ✅ 开源 | py4godot 生态不成熟 |
+| **Electron** | 200MB+ | zerorpc/IPC 调 Python [($TRAE_REF)](https://blog.csdn.net/gitblog_00048/article/details/156749267) | ⚠️ Steam 接受但嫌大 | 内存 500MB+ |
+| **Tauri + Python Sidecar** | 20-50MB | Rust spawn Python 进程 [($TRAE_REF)](https://blog.csdn.net/weixin_44786530/article/details/139716928) | ✅ Steam 友好 | **✅ 推荐** |
+| **Tauri + Python Embed** | 50-100MB | 内嵌 Python 解释器 [($TRAE_REF)](http://m.toutiao.com/group/7181051763548717629/) | ✅ | 备选,Phase 1.5 |
+
+**关键优势**:
+- **Tauri 壳 = Rust 写的 WebView**,前端用 React/TS(与之前 Web 方案代码高度复用);
+- **Sidecar = 玩家电脑上的 Python 进程**,由 Tauri 启动并通过 stdio 通信;
+- **Proto 用系统 Python 跑**(或内嵌 Python Embed,二选一,见 §4.4),不用 Docker 不用 micromamba 隔离(单进程够用);
+- **未来切 Godot** = 把 Tauri 的 React 前端换成 Godot UI 节点树,Python Sidecar 完全保留。
+
+### 4.0.1 架构图(v0.4 全新)
 
 ```
-┌──────────────────────────────────────────────────────────┐
-│                   浏览器(玩家)                            │
-│   Next.js 14 + TypeScript + TailwindCSS + PixiJS         │
-│   - 剧情页(任务简报)                                       │
-│   - Forge 工作台(可视化调参 UI)                              │
-│   - 风险门(教学多选题 + 解释)                                 │
-│   - 作品墙(本地浏览自己的作品)                                 │
-└──────────────────────────┬───────────────────────────────┘
-                           │ HTTP / WebSocket
-                           ▼
-┌──────────────────────────────────────────────────────────┐
-│              FastAPI 后端(Docker 容器)                    │
-│   - /api/missions       任务列表                          │
-│   - /api/forge/run      同步跑 Proto 程序(返回评分)        │
-│   - /api/forge/jobs/{id} 查询历史                          │
-│   - /api/gallery        作品 CRUD                        │
-│   - /api/risk/evaluate  风险门评分                        │
-└──────────────────────────┬───────────────────────────────┘
-                           │ Python SDK 调用
-                           ▼
-┌──────────────────────────────────────────────────────────┐
-│         Proto 引擎层(Docker 容器)                          │
-│   proto-language (MIT)                                  │
-│     Sequence / Segment / Construct / Constraint /        │
-│     Generator / Optimizer / Program 七大原语             │
-│   proto-tools  (自动管理 micromamba 隔离环境)              │
-│   PROTO_HOME 指向项目目录 .proto/                         │
-│                                                          │
-│   默认工具栈(R2 内含子任务):                                │
-│     - SpliceTransformer  (剪接位点评分,~250MB)             │
-│     - Evo 2 1B           (序列生成器,~1GB)                │
-│     - ESM2 650M          (蛋白语言模型,~2.5GB)            │
-│     - motif 评分器        (内置,无依赖)                     │
-└──────────────────────────────────────────────────────────┘
-                           │
-                           ▼
-┌──────────────────────────────────────────────────────────┐
-│           存储层(项目目录内,Docker 卷)                    │
-│   - SQLite (.data/protoforge.db)  玩家、任务、作品、风险  │
-│   - JSON Files (.data/programs/)    玩家 Proto 程序 + 输出 │
-│   - FASTA (.data/sequences/)         导出的序列             │
-│   - PROTO_HOME (.proto/)             Proto 模型权重与缓存   │
-└──────────────────────────────────────────────────────────┘
+┌─────────────────────────────────────────────────────────────┐
+│  玩家桌面应用:Tauri 主程序(.exe / .dmg / .AppImage)              │
+│  ┌───────────────────────────────────────────────────────┐  │
+│  │  Rust 壳(Tauri 2.x)                                    │  │
+│  │  - 窗口管理                                              │  │
+│  │  - spawn Python sidecar(子进程)                        │  │
+│  │  - stdio / localhost:port 与 sidecar 通信                │  │
+│  │  - 文件系统访问(读 .protoforge 作品文件)                 │  │
+│  │  - 启动器(更新、设置、模型下载)                            │  │
+│  └──────────────────────┬────────────────────────────────┘  │
+│                         │ Tauri IPC                          │
+│  ┌──────────────────────▼────────────────────────────────┐  │
+│  │  WebView(React + TypeScript + Tailwind)               │  │
+│  │  - 剧情页(任务简报)                                       │  │
+│  │  - Forge 工作台(可视化调参 UI)                              │  │
+│  │  - 风险门(教学多选题 + 解释)                                 │  │
+│  │  - 作品墙(本地浏览自己的作品)                                 │  │
+│  │  - Settings 页(LLM provider、档位选择)                   │  │
+│  └──────────────────────┬────────────────────────────────┘  │
+│                         │ HTTP (Tauri 转发到 localhost:port) │
+└─────────────────────────┼───────────────────────────────────┘
+                          │
+            ┌─────────────▼──────────────┐
+            │  Python Sidecar 子进程     │
+            │  (玩家电脑上的 Python 进程) │
+            │                            │
+            │  FastAPI(或 aiohttp)服务器  │
+            │  监听 127.0.0.1:7654       │
+            │                            │
+            │  ┌──────────────────────┐  │
+            │  │  Proto 引擎           │  │
+            │  │  pip install proto-language │
+            │  │  (安装时一次性下载)     │  │
+            │  └──────┬───────────────┘  │
+            │         │                   │
+            │  ┌──────▼───────────────┐  │
+            │  │  生物模型栈            │  │
+            │  │  - SpliceTransformer  │  │
+            │  │  - Evo 2 1B           │  │
+            │  │  - ESM2 650M          │  │
+            │  │  - AlphaGenome        │  │
+            │  │  (按 GPU 档位加载)     │  │
+            │  └──────────────────────┘  │
+            └─────────────┬──────────────┘
+                          │
+            ┌─────────────▼──────────────┐
+            │  玩家本地存储(项目目录内)    │
+            │  - data/protoforge.db      │
+            │  - data/programs/*.json    │
+            │  - data/sequences/*.fasta  │
+            │  - models/  (模型权重缓存)  │
+            │  - logs/                   │
+            └────────────────────────────┘
 ```
+
+### 4.0.2 进程间通信(IPC)
+
+**Tauri 主程序 ↔ Python Sidecar** 通过**localhost HTTP** 通信:
+- Tauri 启动时 spawn Python 子进程,等待 sidecar 在 `127.0.0.1:7654` 起 FastAPI;
+- React 前端通过 Tauri 的 `invoke()` API 调 Rust 壳,Rust 壳转发 HTTP 请求到 Python;
+- 优势:Python 端完全用熟悉的 FastAPI,无需新协议;调试时可手动用 curl 测 sidecar。
+
+**为什么不直接 stdio**:stdio 通信需要 Rust 端解析 Python 输出,过于复杂;localhost HTTP 简单且可调试。
+
+### 4.0.3 关于 Docker —— v0.4 答案
+
+**v0.4 决定:Phase 1 不用 Docker**。
+
+- **Proto 工具栈用 micromamba 自动管理环境** [($TRAE_REF)](https://github.com/evo-design/proto-language),所以 Python 侧不需要 Docker 隔离;
+- **玩家不需要装 Docker Desktop**,降低安装门槛;
+- **Docker 仍在 dev/CI 用**(开发环境用 Docker 跑测试栈、模型下载),但**不分发给玩家**;
+- **Phase 3 玩家间"作品分享"通过 .protoforge 文件**(类似 .stl 3D 模型),不需要服务端,不上 Docker。
+
+**Phase 1.5 才有"Web 试玩版"分支**:
+- 把 Tauri 内嵌的 React 拆出来成独立 Web 静态站;
+- Python sidecar 变成"玩家手动启的 Python 进程 + Web 调 localhost";
+- 此时若玩家愿意,可用 Docker 一键起 Python sidecar(作为可选的便利脚本);
+- 仍是**玩家本地跑**,不是云端。
+
+### 4.0.4 Python 运行时方案选择(用户 2026-07-06 反馈后新增)
+
+| 方案 | 安装包大小 | 玩家需装 Python? | 难度 |
+|---|---|---|---|
+| **A. 依赖系统 Python**(要求 ≥3.10) | Tauri 20-50MB | ✅ 是 | 最简单 |
+| **B. 内嵌 Python Embed** | Tauri 50-100MB | ❌ 否 | 中等,Phase 1.5 |
+| **C. PyInstaller 打 Python sidecar** | Tauri 200-500MB | ❌ 否 | 复杂,Python+ML 库冲突多 [($TRAE_REF)](http://www.cnblogs.com/ddqdd/archive/2023/09/14.html) |
+
+**Phase 1 推荐 A**(要求玩家装 Python 3.10+)→ **Phase 1.5 切 B**(内嵌 Python Embed)→ **Phase 3 评估 C**(PyInstaller)。
+
+**为什么 Phase 1 不直接 PyInstaller**:Proto 用了 micromamba + 多 ML 库,PyInstaller 打包常见问题 200MB+ 起步且跨平台麻烦。Phase 1 先验证玩法,Phase 1.5 再优化安装体验。
 
 ### 4.1 数据流(Phase 1 端到端时序)
 
 ```
-玩家点击"开炉" → 浏览器收集滑块值
-   → POST /api/forge/run { mission_id, params, nl_text? }
-   → FastAPI 校验 + 生成 Proto Program JSON
+玩家点击"开炉" → 浏览器(WebView)收集滑块值
+   → Tauri invoke('forge_run') → Rust 壳
+   → Rust 转发 HTTP POST /api/forge/run 到 localhost:7654
+   → Python sidecar(FastAPI)校验 + 生成 Proto Program JSON
    → 调用 proto_language.Program.run() (同步,timeout 60s)
    → 收集 constraint 评分 + 输出的 FASTA
    → 写入 SQLite(gallery, runs 表)
    → 返回 { scores: {...}, fasta: "...", risk_flags: [...] }
+   → Tauri 壳回传 WebView
    → 浏览器渲染雷达图 + 风险门提示
 ```
 
@@ -344,59 +422,114 @@ risk_answers (id, run_id, question_id, choice, correct)
 
 ---
 
-## 6. 项目结构
+## 6. 项目结构(v0.4 Tauri 重写)
 
 ```
-protoforge/
+protoforge/                            # 项目根(玩家安装时的目录)
 ├── README.md
-├── docker-compose.yml
+├── package.json                       # npm workspace 根
+├── pnpm-workspace.yaml                # 多包管理
 ├── .env.example
 ├── .gitignore
 ├── docs/
-│   └── superpowers/specs/2026-07-06-protoforge-design.md   (本文件)
+│   └── superpowers/specs/2026-07-06-protoforge-design.md
+│
 ├── apps/
-│   ├── web/                       Next.js 14 前端
-│   │   ├── app/
-│   │   │   ├── page.tsx           首页
-│   │   │   ├── missions/[slug]/   任务详情
-│   │   │   ├── forge/             Forge 工作台
-│   │   │   └── gallery/           作品墙
-│   │   ├── components/
-│   │   ├── lib/api.ts
-│   │   ├── tailwind.config.ts
+│   ├── desktop/                       # Tauri 2.x 主程序(Rust 壳)
+│   │   ├── src-tauri/
+│   │   │   ├── src/
+│   │   │   │   ├── main.rs            # Tauri 入口
+│   │   │   │   ├── sidecar.rs         # spawn Python 进程
+│   │   │   │   ├── ipc.rs             # Rust → Python HTTP 转发
+│   │   │   │   ├── commands.rs        # Tauri invoke 命令
+│   │   │   │   └── fs.rs              # 作品文件读写
+│   │   │   ├── tauri.conf.json
+│   │   │   ├── Cargo.toml
+│   │   │   └── icons/                 # 跨平台图标
 │   │   └── package.json
-│   └── api/                       FastAPI 后端
+│   │
+│   ├── web/                           # React + TypeScript 前端(被 Tauri WebView 加载)
+│   │   ├── src/
+│   │   │   ├── App.tsx                # 路由
+│   │   │   ├── pages/
+│   │   │   │   ├── Home.tsx           # 任务选择
+│   │   │   │   ├── Mission.tsx        # 任务简报
+│   │   │   │   ├── Forge.tsx          # 锻炉工作台
+│   │   │   │   ├── RiskGate.tsx       # 风险门
+│   │   │   │   ├── Gallery.tsx        # 作品墙
+│   │   │   │   └── Settings.tsx       # 设置(LLM provider、档位)
+│   │   │   ├── components/
+│   │   │   │   ├── Sliders.tsx        # 滑块组件
+│   │   │   │   ├── RadarChart.tsx     # 5 维雷达图
+│   │   │   │   ├── SequenceView.tsx   # 序列预览
+│   │   │   │   ├── ForgeAnimation.tsx # 锻炉动画
+│   │   │   │   └── ...
+│   │   │   ├── lib/
+│   │   │   │   ├── api.ts             # 调 Tauri invoke
+│   │   │   │   ├── tauri.ts           # Tauri API 封装
+│   │   │   │   └── forgeTime.ts       # 锻炉仪式渲染
+│   │   │   ├── tailwind.config.ts
+│   │   │   └── package.json
+│   │   └── ...
+│   │
+│   └── api/                           # Python Sidecar(FastAPI)
 │       ├── app/
-│       │   ├── main.py
+│       │   ├── main.py                # FastAPI 入口
 │       │   ├── routers/
-│       │   │   ├── missions.py
-│       │   │   ├── forge.py
-│       │   │   ├── gallery.py
-│       │   │   └── risk.py
+│       │   │   ├── missions.py        # GET /api/missions
+│       │   │   ├── forge.py           # POST /api/forge/run
+│       │   │   ├── gallery.py         # GET /api/gallery
+│       │   │   └── risk.py            # POST /api/risk/evaluate
 │       │   ├── proto/
-│       │   │   ├── engine.py      proto-language 封装
-│       │   │   ├── missions.py    任务模板加载
-│       │   │   └── exporters.py   FASTA 导出
-│       │   ├── db.py              SQLAlchemy
+│       │   │   ├── engine.py          # proto-language 封装
+│       │   │   ├── missions.py        # 任务模板加载
+│       │   │   ├── exporters.py       # FASTA 导出
+│       │   │   └── profile.py         # GPU 档位检测
+│       │   ├── llm/
+│       │   │   ├── base.py            # LLMClient Protocol
+│       │   │   ├── providers/
+│       │   │   │   ├── ollama.py
+│       │   │   │   ├── lmstudio.py
+│       │   │   │   ├── openai_compat.py
+│       │   │   │   └── disabled.py
+│       │   │   └── factory.py         # 降级链自动选
+│       │   ├── db.py                  # SQLAlchemy
 │       │   └── config.py
 │       ├── tests/
 │       │   ├── test_missions.py
 │       │   ├── test_forge.py
 │       │   ├── test_gallery.py
-│       │   └── test_risk.py
-│       ├── Dockerfile
-│       ├── pyproject.toml
+│       │   ├── test_risk.py
+│       │   └── test_llm_factory.py
+│       ├── pyproject.toml             # uv 管理
 │       └── uv.lock
-├── data/                          (gitignore,Docker 卷)
+│
+├── data/                              # (gitignore,玩家本地数据)
 │   ├── protoforge.db
 │   ├── programs/
-│   └── sequences/
-├── .proto/                        (gitignore,Docker 卷,PROTO_HOME)
-└── .cache/                        (gitignore,本地包管理器缓存)
-    ├── pip/
-    ├── uv/
-    └── node_modules.tar
+│   ├── sequences/
+│   └── exports/                       # .protoforge 作品导出
+│
+├── models/                            # (gitignore,生物模型权重缓存)
+│   ├── splice_transformer/
+│   ├── evo2_1b/
+│   ├── esm2_650m/
+│   └── alphagenome/
+│
+├── dev/                               # (gitignore,开发用)
+│   └── docker-compose.yml             # 仅 dev/CI 用,玩家不分发
+│
+└── scripts/
+    ├── install.sh                     # 玩家安装脚本(检查 Python、pip install proto-language)
+    ├── start_dev.sh                   # 开发模式(只起 Python sidecar,Tauri 调试)
+    └── build_release.sh               # 打 .exe / .dmg / .AppImage
 ```
+
+**关键目录变化(v0.4)**:
+- 删:`docker-compose.yml`(玩家不分发)
+- 加:`apps/desktop/src-tauri/`(Tauri Rust 壳)
+- 加:`dev/docker-compose.yml`(仅 dev/CI 用)
+- 加:`scripts/install.sh`、`build_release.sh`(玩家安装 + 跨平台打包)
 
 ---
 
@@ -496,33 +629,39 @@ protoforge/
 
 ---
 
-## 11. 风险与缓解
+## 11. 风险与缓解(v0.4 重写)
 
 | 风险 | 概率 | 影响 | 缓解 |
 |---|---|---|---|
-| Proto 包 Windows 安装兼容性差 | 中 | 高 | Docker 化,所有 Python 跑在 Linux 容器里,Windows 主机只跑 Docker Desktop |
-| Windows 主机未配置 NVIDIA Container Toolkit(玩家有卡但没启 GPU 透传) | 高 | 中 | README 写明一键脚本 `scripts/setup_wsl2_gpu.ps1`;首次启动检测,提示"检测到 NVIDIA 显卡但未启用 GPU 透传" |
-| SpliceTransformer 第一次下载失败 | 低 | 中 | 文档化"断点续传"脚本;支持 HuggingFace 镜像 |
+| 玩家未装 Python 3.10+ | 高 | 高 | Phase 1 `scripts/install.sh` 自动检测 + 引导安装;Phase 1.5 切 Python Embed |
+| 玩家未装 Ollama/LM Studio,但想用 LLM | 高 | 低 | 默认 disabled,游戏不依赖 LLM 能玩;LLM 是可选锦上添花 |
+| Tauri 跨平台打包复杂(Win/Mac/Linux) | 高 | 高 | 优先做 Windows + macOS,Linux 社区驱动;参考 tauri-action GitHub Action |
+| Rust ↔ Python sidecar spawn 失败 | 中 | 高 | Tauri 启动时 health check 5s 超时,失败提示重装;日志写到 `logs/sidecar.log` |
+| Proto 工具栈 micromamba 在 Windows 兼容问题 | 中 | 高 | Phase 1 用纯 pip install 试,失败则降级到 v0.3 的 Docker 方案作为兜底 |
 | 玩家设计触发生物安全红线 | 低 | 中 | L1 关键词扫描 + L2 教学题;Phase 3 接 Stanford IRB 流程 |
 | 项目过于"教育"被玩家弃坑 | 中 | 中 | 强叙事 + 视觉冲击(雷达图、序列动态生成);委托制持续给新目标 |
-| Proto API 变更导致接口断裂 | 中 | 中 | 固定 proto-language 版本 `0.1.0` [($TRAE_REF)](https://github.com/evo-design/proto-language),写好 `requirements-pin` |
+| Proto API 变更导致接口断裂 | 中 | 中 | 固定 proto-language 版本 `0.1.0` [($TRAE_REF)](https://github.com/evo-design/proto-language),写好 `pyproject.toml` pin |
 | Evo 2 1B / AlphaGenome 模型下载大(6GB)首次体验门槛 | 中 | 低 | 启动时后台下载 + 进度条;可"先玩低档位 demo 任务" |
 
 ---
 
-## 12. 验收标准(Phase 1)
+## 12. 验收标准(Phase 1) — v0.4 Tauri 重写
 
 ✅ 验收通过必须满足:
 
-1. `docker compose up -d` 一行命令起服务,`docker compose logs -f` 看到模型加载完成;
-2. **有 NVIDIA 独显时自动启用 GPU profile**(检测 `nvidia-smi` 成功),无 GPU 时降级到 CPU profile,UI 顶部显示当前档位("GPU 加速 / CPU 模式");
-3. 浏览器打开 `http://localhost:3000`,能进"极地科考队"任务;
-4. 调 5 个滑块,点"开炉",**GPU 档 2-5 秒、CPU 档 10-30 秒**看到雷达图 + 序列预览;
+1. `scripts/build_release.sh` 一行命令在 Windows / macOS 都能打出 .exe / .dmg;
+2. 玩家双击 `ProtoForge.exe`,5 秒内出现主窗口,自动 spawn Python sidecar;
+3. **有 NVIDIA 独显时自动启用 GPU profile**(检测 `nvidia-smi` 成功),无 GPU 时降级到 CPU profile,UI 顶部显示当前档位("急锻 / 标准锻 / 古法锻 / 晶种培育");
+4. 进"极地科考队"任务,调 5 个滑块,点"开炉",**对应档位的仪式时长**看到雷达图 + 序列预览;
 5. 改滑块到目标,能稳定通过风险门(教学题 ≥ 2/3);
-6. 作品能存、能进作品墙、能 fork;
-7. 全测试套件绿(`make test` 或 `docker compose -f docker-compose.test.yml up --abort-on-container-exit`);
-8. README 含"如何开服 / 如何接 Stanford 社区 / 如何开/关 GPU 透传"三条路径;
-9. 所有产物在 `C:\Users\32893\AppData\Roaming\TRAE SOLO CN\ModularData\ai-agent\work-mode-projects\6a4b9e7dfc8269540e150261\` 下,C 盘未污染。
+6. 作品能存、能进作品墙、能 fork,能导出为 .protoforge 文件;
+7. **Web 试玩版** (Phase 1.5):`pnpm dev` 起 React,本地 Python sidecar 跑通,浏览器能玩;
+8. 全测试套件绿:
+   - 后端:`cd apps/api && pytest tests/`(单元 + 集成);
+   - 前端:`cd apps/web && pnpm test`(组件单测);
+   - E2E:`pnpm test:e2e`(Playwright 跑"Tauri 窗口 → 任务 → 开炉 → 作品"全流程);
+9. README 含"如何从源码构建 / 如何下载发布包 / 如何接 Stanford 社区 / 如何接 Ollama/LM Studio"四条路径;
+10. 所有产物在 `C:\Users\32893\AppData\Roaming\TRAE SOLO CN\ModularData\ai-agent\work-mode-projects\6a4b9e7dfc8269540e150261\` 下,C 盘未污染(模型权重放项目 `models/` 下)。
 
 ---
 
