@@ -1,0 +1,64 @@
+{
+  "task_id": "polar-glow-v1",
+  "name": "极地耐低温发光菌",
+  "description": "设计一段只能在极地酵母(PYE-12)里正确剪接、不会在 HEK293 人细胞系里表达的 GFP 内含子。",
+  "scenario": "polar",
+  "level": "tutorial",
+  "proto_template": {
+    "objective": "design_intron",
+    "target_cell_line": "PolarYeast",
+    "off_target_cell_line": "HEK293",
+    "intron_length_range": [80, 250],
+    "exon_flanks": {
+      "upstream": "ATGGTGAGCAAGGGCGAGGAGCTGTTCACCGGGGTGGTGCCCATCCTGGTCGAGCTGGACGGCGACGTAAACGGCCACAAGTTCAGCGTGTCCGGCGAGGGCGAGGGCGATGCCACCTACGGCAAGCTGACCCTGAAGTTCATCTGCACCACCGGCAAGCTGCCCGTGCCCTGGCCCACCCTCGTGACCACCCTGACCTACGGCGTGCAGTGCTTCAGCCGCTACCCCGATCATATGAAGCAGCACGACTTCTTCAAGTCCGCCATGCCCGAAGGCTACGTCCAGGAGCGCACCATCTTCTTCAAGGACGACGGCAACTACAAGACCCGCGCCGAGGTGAAGTTCGAGGGCGACACCCTGGTGAACCGCATCGAGCTGAAGGGCGTGGACTTCAAGGAGGACGGCAACATCCTGGGGCACAAGCTGGAGTACAACTACAACAGCCACAACGTCTATATCATGGCCGACAAGCAGAAGAACGGCATCAAGGTGAACTTCAAG",
+      "downstream": "ATCCGCAACTACAAGCTCTCCAAGTACCCCAACGGCAAGCTGATCAAGAAGGACATCCAGCTGCAGGACGGCAGCGTGCAGCTCGCCGACCACTACCAGCAGAACACCCCCATCGGCGACGGCCCCGTGCTGCTGCCCGACAACCACTACCTGAGCACCCAGTCCGCCCTGAGCAAAGACCCCAACGAGAAGCGCGATCACATGGTCCTGCTGGAGTTCGTGACCGCCGCCGGGATCACTCTCGGCATGGACGAGCTGTACAAGTAA"
+    },
+    "constraint": {
+      "min_target_splice_score": 0.65,
+      "max_off_target_splice_score": 0.20,
+      "gc_content_range": [0.35, 0.65]
+    },
+    "scoring": {
+      "weights": {
+        "target_splice": 0.5,
+        "orthogonality": 0.35,
+        "gc_penalty": 0.1,
+        "length_penalty": 0.05
+      }
+    },
+    "search": {
+      "generator": "preference",
+      "mcmc_steps": 50,
+      "temperature": 0.8
+    }
+  },
+  "sliders": [
+    { "id": "min_target_splice", "label": "目标剪接强度下限", "min": 0.4, "max": 0.95, "step": 0.05, "default": 0.65, "description": "在极地菌株里剪接位点强度阈值" },
+    { "id": "max_off_target", "label": "脱靶抑制强度", "min": 0.05, "max": 0.4, "step": 0.05, "default": 0.20, "description": "HEK293 中最大可接受剪接强度" },
+    { "id": "weight_alpha", "label": "目标权重 α", "min": 0.0, "max": 1.0, "step": 0.05, "default": 0.5, "description": "对目标剪接强度的偏重" },
+    { "id": "weight_beta", "label": "脱靶权重 β", "min": 0.0, "max": 1.0, "step": 0.05, "default": 0.35, "description": "对正交性的偏重" },
+    { "id": "mcmc_steps", "label": "MCMC 步数", "min": 10, "max": 200, "step": 10, "default": 50, "description": "搜索步数,越多越准但越慢" }
+  ],
+  "risk_rules": [
+    {
+      "id": "biosafety",
+      "question": "为什么我们必须把发光基因限制在极地菌株里表达?",
+      "options": [
+        { "value": "a", "label": "极地菌株里 GFP 才能正确折叠", "correct": false },
+        { "value": "b", "label": "防止发光基因在人体内无控扩增(生物安全)", "correct": true },
+        { "value": "c", "label": "极地菌株比人细胞长得快", "correct": false }
+      ],
+      "explanation": "GFP 一旦在人体细胞中表达,可能引发非预期的免疫或代谢反应。任务核心约束是细胞系正交性。"
+    },
+    {
+      "id": "off_target",
+      "question": "如果 HEK293 中的剪接强度被预测为 0.5,你的方案?",
+      "options": [
+        { "value": "a", "label": "直接通过 — 0.5 也不高", "correct": false },
+        { "value": "b", "label": "否决 — 远超脱靶阈值 0.20", "correct": true },
+        { "value": "c", "label": "降低目标剪接强度至 0.3 来平衡", "correct": false }
+      ],
+      "explanation": "脱靶阈值 0.20 是硬约束。降低目标强度是错误方向,应调高正交性约束或换区段。"
+    }
+  ]
+}
