@@ -51,3 +51,96 @@ class RitualInfo(BaseModel):
 
 class ApiError(BaseModel):
     detail: str
+
+
+# ---------------------------------------------------------------------------
+# Missions
+# ---------------------------------------------------------------------------
+
+class SliderParam(BaseModel):
+    key: str
+    label: str
+    min: float
+    max: float
+    step: float
+    default: float
+    description: str | None = None
+
+
+class RiskRule(BaseModel):
+    rule_id: str
+    prompt: str
+    options: list[str]
+    correct: str
+    explanation: str
+    severity: Literal["info", "warn", "block"] = "info"
+
+
+class Mission(BaseModel):
+    id: str
+    title: str
+    description: str
+    scenario: Literal["polar", "ocean", "soil", "lunar", "custom"]
+    level: Literal["tutorial", "delegation", "network", "tricky", "free"]
+    target_cell_line: str
+    off_target: str
+    intron_length_range: list[int]
+    sliders: list[SliderParam] = Field(default_factory=list)
+    risk_rules: list[RiskRule] = Field(default_factory=list)
+
+
+# ---------------------------------------------------------------------------
+# Risk Gate
+# ---------------------------------------------------------------------------
+
+class RiskCheckItem(BaseModel):
+    rule_id: str
+    user_answer: str
+    correct: bool
+    explanation: str
+    severity: str
+
+
+class RiskCheckRequest(BaseModel):
+    mission_id: str
+    answers: dict[str, str] = Field(..., description="rule_id -> 用户选项")
+
+
+class RiskCheckResponse(BaseModel):
+    mission_id: str
+    passed: bool
+    items: list[RiskCheckItem]
+    score: float = Field(..., ge=0.0, le=1.0)
+
+
+# ---------------------------------------------------------------------------
+# Gallery
+# ---------------------------------------------------------------------------
+
+class ArtifactCreate(BaseModel):
+    mission_id: str
+    title: str
+    intron: str
+    fasta: str
+    scores: dict
+    ritual: str
+    notes: str | None = None
+    risk_passed: bool = True
+
+
+class Artifact(BaseModel):
+    id: str
+    mission_id: str
+    title: str
+    intron: str
+    fasta: str
+    scores: dict
+    ritual: str
+    notes: str | None = None
+    risk_passed: bool
+    created_at: str
+
+
+class ArtifactListResponse(BaseModel):
+    items: list[Artifact]
+    total: int

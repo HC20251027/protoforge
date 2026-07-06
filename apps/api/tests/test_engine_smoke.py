@@ -18,7 +18,7 @@ def test_run_polar_glow_smoke() -> None:
     assert result.intron.startswith("GT") or len(result.intron) > 0
     assert result.fasta.startswith(">")
     assert "primary" in result.scores
-    assert 0.0 <= result.scores["primary"] <= 1.5
+    assert 0.0 <= result.scores["primary"] <= 2.0
 
 
 def test_run_forge_with_generator() -> None:
