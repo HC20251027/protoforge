@@ -1,6 +1,6 @@
 # ProtoForge(原体锻炉)设计文档
 
-> 状态:草案 v0.4 · Tauri 桌面应用 + Python Sidecar 重大架构转向
+> 状态:草案 v0.5 · LLM Provider 重构为云 API 优先 + 引导式选择
 > 日期:2026-07-06
 > 作者:TRAE × 用户共创
 
@@ -311,22 +311,54 @@ Phase 1 实现为**教学多选题 + 自动关键词扫描**两层:
 - 详情页:可重放(用相同参数再跑一次) + 二次编辑(从这件作品 fork 出新版本);
 - Phase 1 只本地浏览(单用户),Phase 2 改 SQL 多用户,Phase 3 接 Stanford Proto 社区的 `proto-client` SDK 实现"导出候选"。
 
-### 5.5 LLM Provider 抽象层(用户 2026-07-06 反馈后升级:目标人群含开发者/程序员)
+### 5.5 LLM Provider 抽象层(用户 2026-07-06 反馈后彻底重构:云 API 优先 + 引导式选择)
 
-**用户洞察**:玩家群体里有相当一部分是**有技术背景、对科研有兴趣的开发者/程序员**,他们会自带 LLM API key 或本地模型服务。要为他们预留**第三方 LLM 接入通道**,而不是只让他们用滑块。
+**用户洞察(关键纠错)**:之前我把"离线/隐私党"当成一类用户,这是**伪命题**。ProtoForge 的核心价值就是"让玩家方案成为科研贡献",**玩家玩这个游戏本身就是数据贡献者**。不存在"我要完全离线不联网"的玩家层级 —— 这是我之前的设计错位,已删。
 
-#### 5.5.1 用户分层与 LLM 体验
+#### 5.5.1 真正的玩家分层(2026-07-06 重写)
 
-| 用户层 | 接入方式 | 配置位置 | Phase 1 支持 |
+| 玩家层 | LLM 接入方式 | 典型用户 | Phase 1 支持 |
 |---|---|---|---|
-| **纯新手** | 不接 LLM,纯滑块 + 教程 | 无 | ✅ 默认 |
-| **本地玩家** | Ollama(`localhost:11434`)/ LM Studio(`localhost:1234`),OpenAI 兼容 API [($TRAE_REF)](http://m.toutiao.com/group/7598431735818240562/)[($TRAE_REF)](https://blog.csdn.net/a772304419/article/details/150642356) | `Settings` 填 `base_url` | ✅ 自动检测 + 手动填 |
-| **云 API 玩家** | Claude / OpenAI / DeepSeek / 任何 OpenAI 兼容云 | `Settings` 填 `base_url + api_key + model` | ✅ |
-| **离线 / 隐私党** | 完全关 LLM | 开关关掉 | ✅ |
+| **云 API 用户(默认推荐)** | Claude / OpenAI / DeepSeek / 任何 OpenAI 兼容云 | 普通玩家、有 key 的开发者 | ✅ **首次启动引导页** 默认走这个 |
+| **本地模型用户** | Ollama / LM Studio(已装) | 本地有 GPU 且不想出 API 钱的玩家 | ✅ 引导页第二步可切 |
+| **纯滑块用户(不接 LLM)** | 完全不用 NL,纯滑块调参 | 不想填任何 key 的玩家 | ✅ 引导页第三步可跳过 |
 
-#### 5.5.2 统一 LLMClient 接口
+**首次启动引导页**(用户 2026-07-06 反馈:"进游戏有引导界面让你选择"):
 
-后端抽象一个 `LLMClient` 接口,内部把 4 类 provider 统一成 `messages → response`:
+```
+┌──────────────────────────────────────────────┐
+│  欢迎来到 原体锻炉                                 │
+│                                              │
+│  你想用什么 AI 助手?                              │
+│                                              │
+│  ⚡ 推荐:云 API(便宜、效果好)                      │
+│  [ 配置云 API ]  ← 默认高亮,DeepSeek/Claude/GPT/... │
+│                                              │
+│  💻 本地模型(需要你电脑已装 Ollama 或 LM Studio)        │
+│  [ 用本地模型 ]                                   │
+│                                              │
+│  🎮 先不接 AI,纯滑块玩(可稍后在 Settings 启用)         │
+│  [ 跳过,纯滑块 ]                                  │
+│                                              │
+│  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━          │
+│  💡 为什么推荐云 API? 云 API 调用一次不到 0.01 元,    │
+│     比本地跑 Ollama 省事 100 倍。                    │
+│     本地模型需要你电脑有 8GB+ 显存 + 装好模型,           │
+│     ProtoForge 不会把这些模型打包进游戏。              │
+└──────────────────────────────────────────────┘
+```
+
+**用户原话(2026-07-06)**:"你看现在他这个他这个开源的这个项目是可以直接打包进游戏里面...然后你说他这里面会涉及到这个 lls 可以看到你都打算是用这种无需用这个哈珀 face API 或者用本地的小游戏...如果你本地的话你你这个很麻烦很麻烦对不对而且你本地那你是不是要把欧拉码封装进去啊对不对"
+
+**核心设计原则**:
+- **不打包本地模型进游戏**:Ollama / LM Studio 玩家自己装,ProtoForge 不封装,降低安装包大小 + 维护成本;
+- **云 API 优先推荐**:便宜、效果比本地小模型好、不依赖玩家硬件;
+- **玩家随时可在 Settings 切换** provider,不需要重启游戏;
+- **纯滑块永远可用**:LLM 是锦上添花,核心玩法不依赖它。
+
+#### 5.5.2 统一 LLMClient 接口(适配 3 类)
+
+后端抽象一个 `LLMClient` 接口,内部把 3 类 provider 统一成 `messages → response`:
 
 ```python
 # apps/api/app/llm/base.py
@@ -334,41 +366,35 @@ class LLMClient(Protocol):
     async def complete(self, system: str, user: str, **kw) -> str: ...
 
 # apps/api/app/llm/providers/
-#   - ollama.py    (检测 localhost:11434,model 走本地拉取)
-#   - lmstudio.py  (检测 localhost:1234)
-#   - openai_compat.py  (任意 base_url + api_key,覆盖 Claude/GPT/DeepSeek/...)
-#   - disabled.py  (NL 接口完全关闭)
+#   - cloud.py       (Claude / OpenAI / DeepSeek / 任何 OpenAI 兼容云,必填 api_key)
+#   - local.py       (Ollama localhost:11434 / LM Studio localhost:1234,玩家自己装)
+#   - disabled.py    (NL 接口完全关闭,纯滑块游戏)
 ```
 
-**降级链**(后端启动时按顺序探测,首个可用为默认):
-```
-玩家显式配置 (Settings) > 环境变量 (ANTHROPIC_API_KEY / OPENAI_API_KEY) 
-  > 检测到本地 Ollama (localhost:11434 /api/tags 返回 200) 
-  > 检测到本地 LM Studio (localhost:1234 /v1/models 返回 200) 
-  > 关闭 NL 接口
-```
+**协议统一**:Ollama / LM Studio 都已经支持 OpenAI 兼容 API [($TRAE_REF)](https://juejin.cn/post/7590128405350285312),所以 `local.py` 和 `cloud.py` 都用 `openai` Python SDK,只是 `base_url` 和 `api_key` 不同,**零额外代码**。
 
-**协议统一**:Ollama / LM Studio 都已经支持 OpenAI 兼容 API [($TRAE_REF)](https://juejin.cn/post/7590128405350285312),所以 `openai_compat.py` 一个实现就能接 4 类(本地 Ollama / 本地 LM Studio / Claude / OpenAI / DeepSeek / 任何兼容服务),用 `openai` Python SDK 即可,**零额外代码**。
+#### 5.5.3 引导后保存的配置(`data/protoforge.db` 的 `app_settings` 表)
 
-#### 5.5.3 配置存储
-
-`Settings` 页配置项(写入 `data/protoforge.db` 的 `app_settings` 表):
 ```json
 {
-  "llm_provider": "auto",  // auto / ollama / lmstudio / openai_compat / disabled
-  "base_url": null,         // auto 模式可空,显式模式必填
-  "api_key": null,          // 本地服务不需要,云 API 必填
-  "model": null,            // 留空则 provider 选默认(如 Ollama 的 llama3.2)
-  "system_prompt_override": null  // 高级用户可改 system prompt
+  "llm_provider": "cloud",    // cloud / local / disabled
+  "base_url": "https://api.deepseek.com/v1",  // 云 API 默认推荐 DeepSeek
+  "api_key": null,            // 玩家在引导页填
+  "model": "deepseek-chat",   // 推荐 DeepSeek 便宜;Claude 玩家可改
+  "system_prompt_override": null,
+  "onboarded": true           // 引导完成标记
 }
 ```
 
-**用户分级 UX**:
-- 普通玩家:`Settings` 页只看到"启用 AI 助手?"开关,其他自动;
-- 进阶玩家:展开"高级"折叠,填 `base_url`;
-- 开发者:展开"开发者模式",可改 `system_prompt`、调 `temperature`、看每次 LLM 调用的 token 用量和耗时。
+**首次启动检测**:`onboarded=false` 时,React 渲染引导页;完成后写 `onboarded=true`,后续不再展示。
 
-#### 5.5.4 NL → Proto 翻译 Prompt 模板(Phase 1 内置,Phase 3 可被 Stanford AI Agent 替换)
+#### 5.5.4 用户分级 UX(Settings 页)
+
+- **普通玩家**:`Settings` 页只看到"已选:云 API(DeepSeek)","更换"按钮;
+- **进阶玩家**:展开"高级",可改 `model`、`base_url`;
+- **开发者**:展开"开发者模式",可改 `system_prompt`、调 `temperature`、看每次 LLM 调用的 token 用量和耗时。
+
+#### 5.5.5 NL → Proto 翻译 Prompt 模板(Phase 1 内置,Phase 3 可被 Stanford AI Agent 替换)
 
 ```
 你是 ProtoForge 游戏里的「AI 锻炉助手」。玩家会描述他想要的生物设计,你要把它转成 Proto 程序的 JSON 片段。
@@ -390,13 +416,13 @@ class LLMClient(Protocol):
 }
 ```
 
-#### 5.5.5 Phase 进度安排
+#### 5.5.6 Phase 进度安排(2026-07-06 重写)
 
 | Phase | NL 接口状态 |
 |---|---|
-| Phase 1 | `LLMClient` 抽象 + Ollama/LM Studio/OpenAI 兼容 provider 实现 + `Settings` UI;**默认 disabled**(纯滑块游戏能玩),玩家主动开 |
-| Phase 2 | NL 接口默认 enabled(Ollama `qwen2.5-3b-instruct-q4_k_m` 为主);5 个新手引导关卡全用 NL 教玩家 |
-| Phase 3 | 接入 Stanford Proto 社区 AI Agent [($TRAE_REF)](https://blog.csdn.net/weixin_51577602/article/details/162294641);玩家方案可"导出为 NL 描述"反向生成 |
+| **Phase 1** | 首次启动引导页(3 选项);**默认推荐云 API(DeepSeek)**;Settings 可随时切;玩家不接 LLM 也能玩 |
+| Phase 2 | 引导页加 LLM 能力展示("AI 助手能帮你做什么");5 个新手引导关卡全用 NL 教玩家 |
+| Phase 3 | 接 Stanford Proto 社区 AI Agent [($TRAE_REF)](https://blog.csdn.net/weixin_51577602/article/details/162294641);玩家方案可"导出为 NL 描述"反向生成;**首次启动引导增加"贡献科研"说明**(玩家知道自己的作品会被科研使用) |
 
 ### 5.6 存储模型(SQLite,Phase 1)
 
@@ -488,11 +514,10 @@ protoforge/                            # 项目根(玩家安装时的目录)
 │       │   ├── llm/
 │       │   │   ├── base.py            # LLMClient Protocol
 │       │   │   ├── providers/
-│       │   │   │   ├── ollama.py
-│       │   │   │   ├── lmstudio.py
-│       │   │   │   ├── openai_compat.py
-│       │   │   │   └── disabled.py
-│       │   │   └── factory.py         # 降级链自动选
+│       │   │   │   ├── cloud.py       # Claude/OpenAI/DeepSeek/任何 OpenAI 兼容云
+│       │   │   │   ├── local.py       # Ollama / LM Studio(玩家自装,游戏不打包)
+│       │   │   │   └── disabled.py    # 纯滑块模式
+│       │   │   └── factory.py         # 引导后按配置选 provider
 │       │   ├── db.py                  # SQLAlchemy
 │       │   └── config.py
 │       ├── tests/
@@ -634,7 +659,8 @@ protoforge/                            # 项目根(玩家安装时的目录)
 | 风险 | 概率 | 影响 | 缓解 |
 |---|---|---|---|
 | 玩家未装 Python 3.10+ | 高 | 高 | Phase 1 `scripts/install.sh` 自动检测 + 引导安装;Phase 1.5 切 Python Embed |
-| 玩家未装 Ollama/LM Studio,但想用 LLM | 高 | 低 | 默认 disabled,游戏不依赖 LLM 能玩;LLM 是可选锦上添花 |
+| 玩家未装 Ollama/LM Studio,但选了"本地模型" | 中 | 低 | 引导页检测 `localhost:11434` / `1234`,不可用就提示"你电脑没装 Ollama,建议改用云 API",并给一键安装链接 |
+| 玩家填的云 API key 无效/欠费 | 高 | 低 | 引导页填完就 ping 一下,失败提示;运行时调用失败弹"AI 助手连接失败,已切到纯滑块" |
 | Tauri 跨平台打包复杂(Win/Mac/Linux) | 高 | 高 | 优先做 Windows + macOS,Linux 社区驱动;参考 tauri-action GitHub Action |
 | Rust ↔ Python sidecar spawn 失败 | 中 | 高 | Tauri 启动时 health check 5s 超时,失败提示重装;日志写到 `logs/sidecar.log` |
 | Proto 工具栈 micromamba 在 Windows 兼容问题 | 中 | 高 | Phase 1 用纯 pip install 试,失败则降级到 v0.3 的 Docker 方案作为兜底 |
