@@ -1,6 +1,6 @@
 # ProtoForge(原体锻炉)设计文档
 
-> 状态:草案 v0.1 · 待用户审阅
+> 状态:草案 v0.2 · 算力策略已修订(默认 GPU)
 > 日期:2026-07-06
 > 作者:TRAE × 用户共创
 
@@ -28,7 +28,8 @@
 - 所有产物放**项目目录**下,不动 C 盘(配置 `PROTO_HOME=/path/to/project/.proto`,pip/uv 缓存重定向);
 - **Docker 化**,一行命令起停;
 - 单人可维护,渐进推进;
-- 兼顾"未来可剥离为独立像素游戏"的扩展性。
+- 兼顾"未来可剥离为独立像素游戏"的扩展性;
+- **算力策略(2026-07-06 修订)**:默认目标 = 消费级 8GB+ NVIDIA 独显(RTX 3060 及以上);无 GPU 走纯 CPU 降级路径,功能约 70% 可用(详见 §4.2)。
 
 ---
 
@@ -118,6 +119,52 @@
    → 浏览器渲染雷达图 + 风险门提示
 ```
 
+### 4.2 算力档位与自适应(用户 2026-07-06 反馈后修订)
+
+**默认目标 = 消费级 8GB+ NVIDIA 独显**(RTX 3060 已是 Steam 装机量第一,占 6.27% [($TRAE_REF)](http://m.toutiao.com/group/7285648330061857315/))。但保留**无 GPU 降级路径**,覆盖没独显的玩家。
+
+启动时自动检测硬件,匹配模型分档:
+
+| 玩家硬件 | 默认模型栈 | 显存/CPU 占用 | Phase 1 体验 |
+|---|---|---|---|
+| **RTX 4070+ / 3090+ / 4090(8GB+)** | Evo 2 1B + ESM2 650M + AlphaGenome + ProteinMPNN | ~6GB 显存 | 完整体验,雷达图实时刷新 |
+| RTX 3060/4060(8-12GB) | Evo 2 1B + ESM2 650M + AlphaGenome + ProteinMPNN | ~6GB 显存 | 完整体验 |
+| 4-6GB 独显 / 集成显卡 | SpliceTransformer + ESM2 650M(部分) + motif 评分器 | 2-3GB 显存 | 90% 功能,内含子任务可玩 |
+| **无独显 / Apple Silicon / 纯 CPU** | SpliceTransformer(CPU)+ motif 评分器 | 2GB 内存 | 70% 功能,推理 5-15s,关卡仍可通关 |
+
+**自动检测实现**:
+- 启动时 `nvidia-smi --query-gpu=memory.total --format=csv,noheader` 查显存;
+- 匹配分档 → 写 `.proto/profile.json` → proto-language 启动时按 profile 加载模型;
+- 用户可在"设置"页手动覆盖档位("我有更好的卡,想跑 7B")。
+
+**关键原则**:有 GPU 就别"装穷",用 GPU 跑 Evo 2 1B / AlphaGenome / ESM2 才是 Proto 论文里那批实验验证工具,玩家方案才真的"能出口到 Stanford 社区"。
+
+### 4.3 Docker GPU 透传配置
+
+`docker-compose.yml` 需用 NVIDIA Container Toolkit 透传 GPU:
+
+```yaml
+services:
+  api:
+    image: protoforge-api:latest
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+    environment:
+      - NVIDIA_VISIBLE_DEVICES=all
+      - PROTO_HOME=/app/.proto
+      - PROTO_PROFILE=auto   # auto / gpu_8gb / gpu_24gb / cpu
+    volumes:
+      - ./.proto:/app/.proto
+      - ./.data:/app/.data
+```
+
+**Windows 主机要求**:Docker Desktop 开启 WSL2 + NVIDIA Container Toolkit。无 GPU 也能跑(自动降级到 CPU profile),但 README 显眼位置标"推荐 NVIDIA 独显 ≥ 8GB"。
+
 ---
 
 ## 5. 模块详细设计
@@ -127,7 +174,7 @@
 Phase 1 **1 个核心任务**:**"极地科考队的耐低温发光菌"**。
 
 - **背景叙事**:2099 年,南极科考站坍塌,救援队要在 -80°C 黑夜里找到幸存者。他们委托你:设计一段**只能在极地菌株里正确表达、不能在人细胞系里误表达**的"诱导型发光启动子 + 内含子"组合,这样发光菌在人体内不会无控扩增,符合生物安全;
-- **Proto 任务**:复用 Proto 论文 R2 的"细胞系特异性内含子"任务范式(以 SpliceTransformer + AlphaGenome 为约束) [($TRAE_REF)](https://blog.csdn.net/weixin_51577602/article/details/162294641),Phase 1 用 SpliceTransformer + motif 评分器替代 AlphaGenome(避免 GPU 依赖);
+- **Proto 任务**:复用 Proto 论文 R2 的"细胞系特异性内含子"任务范式(以 SpliceTransformer + AlphaGenome 为约束) [($TRAE_REF)](https://blog.csdn.net/weixin_51577602/article/details/162294641),**有 GPU 直接用 AlphaGenome 复刻论文 32% 任务**;无 GPU 时降级为 SpliceTransformer + ESM2 650M 困惑度评分。
 - **玩家操作**:5 个滑块 —— "目标剪接强度"、"脱靶抑制强度"、"约束权重 α/β"、"MCMC 步数";"生成器下拉" —— "均匀突变 / 偏好突变 / 随机序列";
 - **评分函数**:`score = α·target_splice + β·orthogonality + γ·novelty`(前两个用 SpliceTransformer,novelty 用 ESM2 困惑度);
 - **通过条件**:3 个目标(每个细胞系对)平均分 ≥ 0.7,且风险门通过。
@@ -326,14 +373,20 @@ protoforge/
 
 ## 10. 性能与资源预算
 
-| 项 | Phase 1 预算 |
+| 档位 | 显存/CPU | 后端容器 | 首次下载 | 单次开炉 |
+|---|---|---|---|---|
+| **GPU 8GB+(推荐)** | ~6GB 显存 | 8GB 显存 + 4 核 CPU | ~6GB(Evo 2 1B + ESM2 650M + AlphaGenome + ProteinMPNN) | **2-5 秒** |
+| GPU 4-6GB | 3-4GB 显存 | 4GB 显存 + 2 核 CPU | ~3GB | 5-10 秒 |
+| **纯 CPU / Apple Silicon** | 2GB 内存 | 2 核 + 4GB RAM | ~300MB(只 SpliceTransformer + motif) | 10-30 秒 |
+
+**关键差异**:有 GPU 时玩家每次"调滑块→看雷达图"几乎实时(2-5 秒),无 GPU 时 10-30 秒,UX 要做"加载中骨架屏"。
+
+| 通用预算 | 数值 |
 |---|---|
-| 后端容器内存 | 4 GB 起步(Proto 模型 + 评分) |
-| 后端容器 CPU | 2 核 |
-| 前端构建 | 静态导出,无 SSR 压力 |
-| 首次启动下载 | SpliceTransformer 250MB + Evo 2 1B 1GB + ESM2 650M 2.5GB ≈ 4 GB |
-| 单次开炉耗时 | 5-15 秒(取决于 MCMC 步数) |
-| SQLite 容量 | 10 万次 run 约 50 MB,无忧 |
+| 前端构建 | 静态导出 |
+| SQLite 容量 | 10 万次 run 约 50 MB |
+| Proto 模型总占用(全栈) | ~10GB |
+| 网络 | 仅首次下载模型,运行期离线 |
 
 ---
 
@@ -342,10 +395,12 @@ protoforge/
 | 风险 | 概率 | 影响 | 缓解 |
 |---|---|---|---|
 | Proto 包 Windows 安装兼容性差 | 中 | 高 | Docker 化,所有 Python 跑在 Linux 容器里,Windows 主机只跑 Docker Desktop |
+| Windows 主机未配置 NVIDIA Container Toolkit(玩家有卡但没启 GPU 透传) | 高 | 中 | README 写明一键脚本 `scripts/setup_wsl2_gpu.ps1`;首次启动检测,提示"检测到 NVIDIA 显卡但未启用 GPU 透传" |
 | SpliceTransformer 第一次下载失败 | 低 | 中 | 文档化"断点续传"脚本;支持 HuggingFace 镜像 |
 | 玩家设计触发生物安全红线 | 低 | 中 | L1 关键词扫描 + L2 教学题;Phase 3 接 Stanford IRB 流程 |
 | 项目过于"教育"被玩家弃坑 | 中 | 中 | 强叙事 + 视觉冲击(雷达图、序列动态生成);委托制持续给新目标 |
 | Proto API 变更导致接口断裂 | 中 | 中 | 固定 proto-language 版本 `0.1.0` [($TRAE_REF)](https://github.com/evo-design/proto-language),写好 `requirements-pin` |
+| Evo 2 1B / AlphaGenome 模型下载大(6GB)首次体验门槛 | 中 | 低 | 启动时后台下载 + 进度条;可"先玩低档位 demo 任务" |
 
 ---
 
@@ -354,13 +409,14 @@ protoforge/
 ✅ 验收通过必须满足:
 
 1. `docker compose up -d` 一行命令起服务,`docker compose logs -f` 看到模型加载完成;
-2. 浏览器打开 `http://localhost:3000`,能进"极地科考队"任务;
-3. 调 5 个滑块,点"开炉",5-15 秒后看到雷达图 + 序列预览;
-4. 改滑块到目标,能稳定通过风险门(教学题 ≥ 2/3);
-5. 作品能存、能进作品墙、能 fork;
-6. 全测试套件绿(`make test` 或 `docker compose -f docker-compose.test.yml up --abort-on-container-exit`);
-7. README 含"如何开服 / 如何接 Stanford 社区"两条路径;
-8. 所有产物在 `C:\Users\32893\AppData\Roaming\TRAE SOLO CN\ModularData\ai-agent\work-mode-projects\6a4b9e7dfc8269540e150261\` 下,C 盘未污染。
+2. **有 NVIDIA 独显时自动启用 GPU profile**(检测 `nvidia-smi` 成功),无 GPU 时降级到 CPU profile,UI 顶部显示当前档位("GPU 加速 / CPU 模式");
+3. 浏览器打开 `http://localhost:3000`,能进"极地科考队"任务;
+4. 调 5 个滑块,点"开炉",**GPU 档 2-5 秒、CPU 档 10-30 秒**看到雷达图 + 序列预览;
+5. 改滑块到目标,能稳定通过风险门(教学题 ≥ 2/3);
+6. 作品能存、能进作品墙、能 fork;
+7. 全测试套件绿(`make test` 或 `docker compose -f docker-compose.test.yml up --abort-on-container-exit`);
+8. README 含"如何开服 / 如何接 Stanford 社区 / 如何开/关 GPU 透传"三条路径;
+9. 所有产物在 `C:\Users\32893\AppData\Roaming\TRAE SOLO CN\ModularData\ai-agent\work-mode-projects\6a4b9e7dfc8269540e150261\` 下,C 盘未污染。
 
 ---
 
