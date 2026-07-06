@@ -1,6 +1,6 @@
 # ProtoForge(原体锻炉)设计文档
 
-> 状态:草案 v0.2 · 算力策略已修订(默认 GPU)
+> 状态:草案 v0.3 · 算力策略 + LLM Provider 抽象 + 锻炉时间游戏化
 > 日期:2026-07-06
 > 作者:TRAE × 用户共创
 
@@ -139,6 +139,23 @@
 
 **关键原则**:有 GPU 就别"装穷",用 GPU 跑 Evo 2 1B / AlphaGenome / ESM2 才是 Proto 论文里那批实验验证工具,玩家方案才真的"能出口到 Stanford 社区"。
 
+### 4.2.1 算力档位 × 锻炉时间 = 游戏机制(用户 2026-07-06 反馈后修订)
+
+**核心洞察**:**推理时长不是 bug,是游戏机制**。玩家硬件差异转化为"原体锻炉仪式"的不同形态,本身就在讲"科研本就是慢工出细活"的叙事。
+
+| 玩家硬件 | 单次开炉真实耗时 | 游戏内仪式名 | 视觉表现 | 配套机制 |
+|---|---|---|---|---|
+| RTX 4090 / 3090(8GB+) | 2-5 秒 | **「急锻」** | 火花飞溅 + 快速合盖动画 | 一次点击几乎实时,可批量比较 5-10 个方案 |
+| RTX 3060/4060(8-12GB) | 5-10 秒 | **「标准锻」** | 标准锻造动画 + 进度条 | 节奏舒适,适合"一次调一参" |
+| 集成显卡 / 4-6GB | 15-30 秒 | **「古法锻」** | 慢节奏 + 火光摇曳 + 仪式音效 | 玩家有时间思考"下一步调哪一参" |
+| 纯 CPU / Apple Silicon | 30-90 秒 | **「晶种培育」** | 长时间养成 + 阶段提示(20% 30% 50% 80%) | **等待中挂小游戏**:猜最终评分区间 / 看剧情对话 / 翻作品墙 |
+
+**关键设计**:
+- **不掩盖加载**:UI 永远显示"仪式进行中"和"已等待 X 秒" —— 慢就是慢,但有仪式感;
+- **等待中可关掉浏览器**:长任务写入 `runs` 表异步,玩家回来刷新看结果(类 EteRNA 云实验室);
+- **档位徽章系统**:玩家关卡页右上角展示"急锻者 / 标准锻匠 / 古法锻师 / 晶种培育师"徽章,**用"我慢但我坚持"作为荣誉**,而不是惩罚;
+- **跨档位公平**:慢档位的玩家有"晶种培育"专属成就(连续 10 次古法锻 + 最终完成关卡),快档位玩家有"急锻"专属成就(10 次内最优解),**两端都有荣誉**。
+
 ### 4.3 Docker GPU 透传配置
 
 `docker-compose.yml` 需用 NVIDIA Container Toolkit 透传 GPU:
@@ -147,6 +164,7 @@
 services:
   api:
     image: protoforge-api:latest
+    build: ./apps/api
     deploy:
       resources:
         reservations:
@@ -164,6 +182,13 @@ services:
 ```
 
 **Windows 主机要求**:Docker Desktop 开启 WSL2 + NVIDIA Container Toolkit。无 GPU 也能跑(自动降级到 CPU profile),但 README 显眼位置标"推荐 NVIDIA 独显 ≥ 8GB"。
+
+**Proto-language 打包进镜像**(用户 2026-07-06 反馈后修订):
+- proto-language 已在 GitHub 开源,MIT 协议 [($TRAE_REF)](https://github.com/evo-design/proto-language);
+- PyPI 正式包计划中,当前通过 `pip install git+https://github.com/evo-design/proto-language.git` 安装 [($TRAE_REF)](https://github.com/evo-design/proto-language);
+- Dockerfile 一行搞定: `RUN pip install git+https://github.com/evo-design/proto-language.git`;
+- proto-tools 用 micromamba 自动管理子环境(SpliceTransformer、ESM2 等每个工具一个隔离环境),无需手动配;
+- **打包后整个游戏自包含**:玩家拉取 `protoforge:latest` 镜像,装完直接能玩,不依赖任何外部包管理器。
 
 ---
 
@@ -208,11 +233,92 @@ Phase 1 实现为**教学多选题 + 自动关键词扫描**两层:
 - 详情页:可重放(用相同参数再跑一次) + 二次编辑(从这件作品 fork 出新版本);
 - Phase 1 只本地浏览(单用户),Phase 2 改 SQL 多用户,Phase 3 接 Stanford Proto 社区的 `proto-client` SDK 实现"导出候选"。
 
-### 5.5 自然语言接口(Phase 2 留接口)
+### 5.5 LLM Provider 抽象层(用户 2026-07-06 反馈后升级:目标人群含开发者/程序员)
 
-- Phase 1:UI 上有 NL 输入框但**未生效**(前端 placeholder,后端不接);
-- Phase 2:接 Ollama 跑 `qwen2.5-3b-instruct-q4_k_m`(约 2GB,纯 CPU 推理 1-3 秒),用 prompt 把 NL → Proto JSON;
-- Phase 3:可切到 Stanford Proto 社区的"AI Agent 自然语言接口" [($TRAE_REF)](https://blog.csdn.net/weixin_51577602/article/details/162294641)。
+**用户洞察**:玩家群体里有相当一部分是**有技术背景、对科研有兴趣的开发者/程序员**,他们会自带 LLM API key 或本地模型服务。要为他们预留**第三方 LLM 接入通道**,而不是只让他们用滑块。
+
+#### 5.5.1 用户分层与 LLM 体验
+
+| 用户层 | 接入方式 | 配置位置 | Phase 1 支持 |
+|---|---|---|---|
+| **纯新手** | 不接 LLM,纯滑块 + 教程 | 无 | ✅ 默认 |
+| **本地玩家** | Ollama(`localhost:11434`)/ LM Studio(`localhost:1234`),OpenAI 兼容 API [($TRAE_REF)](http://m.toutiao.com/group/7598431735818240562/)[($TRAE_REF)](https://blog.csdn.net/a772304419/article/details/150642356) | `Settings` 填 `base_url` | ✅ 自动检测 + 手动填 |
+| **云 API 玩家** | Claude / OpenAI / DeepSeek / 任何 OpenAI 兼容云 | `Settings` 填 `base_url + api_key + model` | ✅ |
+| **离线 / 隐私党** | 完全关 LLM | 开关关掉 | ✅ |
+
+#### 5.5.2 统一 LLMClient 接口
+
+后端抽象一个 `LLMClient` 接口,内部把 4 类 provider 统一成 `messages → response`:
+
+```python
+# apps/api/app/llm/base.py
+class LLMClient(Protocol):
+    async def complete(self, system: str, user: str, **kw) -> str: ...
+
+# apps/api/app/llm/providers/
+#   - ollama.py    (检测 localhost:11434,model 走本地拉取)
+#   - lmstudio.py  (检测 localhost:1234)
+#   - openai_compat.py  (任意 base_url + api_key,覆盖 Claude/GPT/DeepSeek/...)
+#   - disabled.py  (NL 接口完全关闭)
+```
+
+**降级链**(后端启动时按顺序探测,首个可用为默认):
+```
+玩家显式配置 (Settings) > 环境变量 (ANTHROPIC_API_KEY / OPENAI_API_KEY) 
+  > 检测到本地 Ollama (localhost:11434 /api/tags 返回 200) 
+  > 检测到本地 LM Studio (localhost:1234 /v1/models 返回 200) 
+  > 关闭 NL 接口
+```
+
+**协议统一**:Ollama / LM Studio 都已经支持 OpenAI 兼容 API [($TRAE_REF)](https://juejin.cn/post/7590128405350285312),所以 `openai_compat.py` 一个实现就能接 4 类(本地 Ollama / 本地 LM Studio / Claude / OpenAI / DeepSeek / 任何兼容服务),用 `openai` Python SDK 即可,**零额外代码**。
+
+#### 5.5.3 配置存储
+
+`Settings` 页配置项(写入 `data/protoforge.db` 的 `app_settings` 表):
+```json
+{
+  "llm_provider": "auto",  // auto / ollama / lmstudio / openai_compat / disabled
+  "base_url": null,         // auto 模式可空,显式模式必填
+  "api_key": null,          // 本地服务不需要,云 API 必填
+  "model": null,            // 留空则 provider 选默认(如 Ollama 的 llama3.2)
+  "system_prompt_override": null  // 高级用户可改 system prompt
+}
+```
+
+**用户分级 UX**:
+- 普通玩家:`Settings` 页只看到"启用 AI 助手?"开关,其他自动;
+- 进阶玩家:展开"高级"折叠,填 `base_url`;
+- 开发者:展开"开发者模式",可改 `system_prompt`、调 `temperature`、看每次 LLM 调用的 token 用量和耗时。
+
+#### 5.5.4 NL → Proto 翻译 Prompt 模板(Phase 1 内置,Phase 3 可被 Stanford AI Agent 替换)
+
+```
+你是 ProtoForge 游戏里的「AI 锻炉助手」。玩家会描述他想要的生物设计,你要把它转成 Proto 程序的 JSON 片段。
+
+可用任务类型:
+- "细胞系特异性内含子" → {constraints: [...], generators: [...]}
+- "极地耐低温启动子" → ...
+- "抗 PD-L1 抗体 CDR" → ...
+
+玩家输入: "{nl_text}"
+当前任务: {mission_slug}
+当前滑块值: {current_params}
+
+输出:只输出 JSON,不要解释。格式:
+{
+  "constraints": [{"name": "...", "weight": 0.0-1.0, "params": {...}}],
+  "generators": [{"name": "uniform_mutation" | "biased_mutation" | "esm3", "params": {...}}],
+  "optimizer": {"name": "mcmc" | "gradient_descent", "params": {...}}
+}
+```
+
+#### 5.5.5 Phase 进度安排
+
+| Phase | NL 接口状态 |
+|---|---|
+| Phase 1 | `LLMClient` 抽象 + Ollama/LM Studio/OpenAI 兼容 provider 实现 + `Settings` UI;**默认 disabled**(纯滑块游戏能玩),玩家主动开 |
+| Phase 2 | NL 接口默认 enabled(Ollama `qwen2.5-3b-instruct-q4_k_m` 为主);5 个新手引导关卡全用 NL 教玩家 |
+| Phase 3 | 接入 Stanford Proto 社区 AI Agent [($TRAE_REF)](https://blog.csdn.net/weixin_51577602/article/details/162294641);玩家方案可"导出为 NL 描述"反向生成 |
 
 ### 5.6 存储模型(SQLite,Phase 1)
 
