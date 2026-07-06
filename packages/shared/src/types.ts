@@ -1,4 +1,6 @@
 // ProtoForge 前后端共享类型
+// 注意:字段名以 Python 后端 (apps/api/app/schemas.py) 实际响应为准;
+// 旧版 plan 的字段名若不同,这里以 backend 优先。
 
 export type LLMProvider = 'cloud' | 'local' | 'disabled';
 
@@ -6,47 +8,48 @@ export type CellLine = 'HEK293' | 'HeLa' | 'Jurkat' | 'PolarYeast' | 'MarsMoss';
 
 export type ForgeRitual = 'swift' | 'standard' | 'ancient' | 'crystal';
 
-export type MissionLevel = 'tutorial' | 'commission' | 'multi-link' | 'tough' | 'free';
+export type MissionLevel = 'tutorial' | 'delegation' | 'network' | 'tricky' | 'free';
 
-export interface Mission {
-  id: string;
-  title: string;
-  scenario: 'polar' | 'mars' | 'hospital';
-  level: MissionLevel;
-  story_brief: string;
-  task_description: string;
-  proto_template: Record<string, unknown>;
-  scoring: ScoringConfig;
-  risk_rules: RiskRule[];
-  sliders: SliderParam[];
-  unlock: { min_badges: number };
-  description?: string;
-  slider_count?: number;
-  risk_count?: number;
-}
+export type MissionScenario = 'polar' | 'ocean' | 'soil' | 'lunar' | 'custom';
 
-export interface ScoringConfig {
-  weights: Record<string, number>;
-  thresholds: Record<string, number>;
-  primary_metric: string;
-}
-
-export interface RiskRule {
-  id: string;
-  question: string;
-  options: { value: string; label: string; correct: boolean }[];
-  explanation: string;
-}
+// --- Sliders / Risk ---
 
 export interface SliderParam {
-  id: string;
+  key: string;
   label: string;
   min: number;
   max: number;
   step: number;
   default: number;
-  description: string;
+  description?: string;
 }
+
+export interface RiskRule {
+  rule_id: string;
+  prompt: string;
+  options: string[];
+  correct: string;
+  explanation: string;
+  severity: 'info' | 'warn' | 'block';
+}
+
+export interface Mission {
+  id: string;
+  title: string;
+  description: string;
+  scenario: MissionScenario;
+  level: MissionLevel;
+  target_cell_line: string;
+  off_target: string;
+  intron_length_range: [number, number];
+  sliders: SliderParam[];
+  risk_rules: RiskRule[];
+  // 兼容旧字段(可选)
+  slider_count?: number;
+  risk_count?: number;
+}
+
+// --- Forge ---
 
 export interface ForgeRequest {
   mission_id: string;
@@ -72,60 +75,119 @@ export interface ForgeResult {
   mission_id: string;
   ritual: ForgeRitual;
   duration_ms: number;
-  scores: ScoreVector;
+  intron: string;
   fasta: string;
+  scores: ScoreVector;
   risk_flags: RiskFlag[];
-  proto_program: Record<string, unknown>;
   passed_gate: boolean;
 }
+
+export interface RitualInfo {
+  ritual: ForgeRitual;
+  description: string;
+  min_gpu_mb: number;
+  models: string[];
+}
+
+// --- Risk gate ---
+
+export interface RiskCheckRequest {
+  mission_id: string;
+  answers: Record<string, string>;
+}
+
+export interface RiskCheckItem {
+  rule_id: string;
+  user_answer: string;
+  correct: boolean;
+  explanation: string;
+  severity: string;
+}
+
+export interface RiskCheckResponse {
+  mission_id: string;
+  passed: boolean;
+  items: RiskCheckItem[];
+  score: number;
+}
+
+// --- Gallery ---
 
 export interface Artifact {
   id: string;
   mission_id: string;
-  mission_title: string;
-  created_at: string;
-  scores: ScoreVector;
+  title: string;
+  intron: string;
   fasta: string;
-  passed_gate: boolean;
+  scores: ScoreVector;
   ritual: ForgeRitual;
-  duration_ms: number;
+  notes?: string | null;
+  risk_passed: boolean;
+  created_at: string;
 }
 
+export interface ArtifactCreate {
+  mission_id: string;
+  title: string;
+  intron: string;
+  fasta: string;
+  scores: ScoreVector;
+  ritual: ForgeRitual;
+  notes?: string | null;
+  risk_passed: boolean;
+}
+
+export interface ArtifactListResponse {
+  items: Artifact[];
+  total: number;
+}
+
+// --- Translate ---
+
 export interface TranslateRequest {
-  natural_language: string;
-  context?: { mission_id?: string; current_params?: Record<string, number> };
+  mission_id: string;
+  text: string;
 }
 
 export interface TranslateResponse {
-  params: Record<string, number>;
-  generator: 'uniform' | 'preference' | 'random';
+  mission_id: string;
+  values: Record<string, number>;
   explanation: string;
-}
-
-export interface OnboardingRequest {
   provider: LLMProvider;
-  config?: {
-    api_key?: string;
-    base_url?: string;
-    model?: string;
-  };
 }
 
-export interface OnboardingResponse {
-  ok: boolean;
-  provider: LLMProvider;
-  test_passed: boolean;
-  error?: string;
+// --- Onboarding ---
+
+export interface OnboardingProviderField {
+  key: string;
+  label: string;
+  default?: string;
+  secret?: boolean;
 }
 
-export interface HardwareProfile {
-  gpu_name: string | null;
-  gpu_memory_mb: number;
-  cpu_cores: number;
-  ram_mb: number;
-  recommended_ritual: ForgeRitual;
-  recommended_models: string[];
+export interface OnboardingProvider {
+  label: string;
+  description: string;
+  fields: OnboardingProviderField[];
 }
+
+export interface OnboardingConfig {
+  name: string;
+  base_url: string;
+  model: string;
+  api_key_set: boolean;
+}
+
+export interface OnboardingStatus {
+  active: LLMProvider;
+  providers: OnboardingProvider[];
+  config: Record<string, OnboardingConfig>;
+  last_test_at: string | null;
+  last_test_ok: boolean | null;
+  last_test_message: string;
+}
+
+// --- Misc ---
 
 export interface ApiError {
   error: string;
