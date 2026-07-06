@@ -167,3 +167,15 @@ class OnboardingSave(BaseModel):
 class OnboardingTestRequest(BaseModel):
     name: str
     config: dict
+
+
+class TranslateRequest(BaseModel):
+    mission_id: str
+    text: str
+
+
+class TranslateResponse(BaseModel):
+    mission_id: str
+    values: dict
+    explanation: str
+    provider: str
