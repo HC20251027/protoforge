@@ -1,13 +1,20 @@
-"""Task 7: Gallery 内存 store + 路由测试。"""
+"""Task 7 + 13: Gallery 内存/SQLite 双 backend + 路由测试。"""
 import pytest
 from fastapi.testclient import TestClient
 
 from app import gallery_store
+from app.config import settings
 from app.main import app
 
 
 @pytest.fixture(autouse=True)
-def _clean_store():
+def _memory_backend(tmp_path, monkeypatch):
+    """强制 memory backend,避免测试落盘污染真实数据目录。"""
+    test_dir = tmp_path / "data"
+    test_dir.mkdir(parents=True, exist_ok=True)
+    monkeypatch.setattr(settings, "data_dir", test_dir)
+    monkeypatch.setattr(settings, "db_path", test_dir / "test.db")
+    gallery_store.set_backend("memory")
     gallery_store.reset()
     yield
     gallery_store.reset()

@@ -41,6 +41,15 @@ async def _startup() -> None:
     log.info("ProtoForge API %s starting on %s:%d", __version__, settings.host, settings.port)
     log.info("Data dir: %s", settings.data_dir)
     log.info("Proto profile: %s", settings.proto_profile)
+    if settings.db_path:
+        from app.db import init_db
+        try:
+            await init_db()
+            log.info("DB ready: %s", settings.db_path)
+        except Exception as exc:  # noqa: BLE001
+            log.warning("DB init failed (continuing with in-memory gallery): %s", exc)
+            from app import gallery_store
+            gallery_store.set_backend("memory")
 
 
 if __name__ == "__main__":
