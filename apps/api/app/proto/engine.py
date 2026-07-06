@@ -72,12 +72,15 @@ def run_forge(mission_id: str, params: dict, generator: str, seed: int | None = 
     intron = _generate_intron(length, generator, seed)
     raw = score_intron(intron, min_target_splice=min_target, max_off_target_splice=max_off)
 
-    primary = round(
-        w_alpha * raw["splice_site_score"]
-        + w_beta * (1.0 - raw["orthogonality"])
-        - weights["gc_penalty"] * raw["gc_penalty"]
-        - weights["length_penalty"] * raw["length_norm"],
-        3,
+    primary = max(
+        0.0,
+        round(
+            w_alpha * raw["splice_site_score"]
+            + w_beta * (1.0 - raw["orthogonality"])
+            - weights["gc_penalty"] * raw["gc_penalty"]
+            - weights["length_penalty"] * raw["length_norm"],
+            3,
+        ),
     )
 
     risk_flags = []

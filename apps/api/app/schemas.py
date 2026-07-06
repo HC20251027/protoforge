@@ -144,3 +144,26 @@ class Artifact(BaseModel):
 class ArtifactListResponse(BaseModel):
     items: list[Artifact]
     total: int
+
+
+# ---------------------------------------------------------------------------
+# Onboarding / LLM
+# ---------------------------------------------------------------------------
+
+class OnboardingStatus(BaseModel):
+    active: str
+    providers: list[dict]
+    config: dict
+    last_test_at: str | None = None
+    last_test_ok: bool | None = None
+    last_test_message: str = ""
+
+
+class OnboardingSave(BaseModel):
+    active: str
+    providers: dict
+
+
+class OnboardingTestRequest(BaseModel):
+    name: str
+    config: dict
