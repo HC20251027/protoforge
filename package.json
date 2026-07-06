@@ -1,0 +1,19 @@
+{
+  "name": "protoforge",
+  "version": "0.1.0",
+  "private": true,
+  "description": "ProtoForge (原体锻炉) - 合成生物学众包游戏化平台",
+  "scripts": {
+    "dev:web": "pnpm --filter @protoforge/web dev",
+    "dev:api": "pnpm --filter @protoforge/desktop dev:api",
+    "dev:desktop": "pnpm --filter @protoforge/desktop dev",
+    "build:web": "pnpm --filter @protoforge/web build",
+    "test": "pnpm -r run test",
+    "lint": "pnpm -r run lint"
+  },
+  "engines": {
+    "node": ">=20",
+    "pnpm": ">=9"
+  },
+  "packageManager": "pnpm@9.12.0"
+}

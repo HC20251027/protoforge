@@ -1,0 +1,43 @@
+# Node
+node_modules/
+dist/
+.pnpm-store/
+.turbo/
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+.venv/
+venv/
+env/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Tauri
+apps/desktop/src-tauri/target/
+
+# 项目运行时数据(不进 git)
+.protoforge/
+.protoforge/
+.data/
+.cache/
+models-cache/
+
+# 环境配置
+.env
+.env.local
+.env.*.local
+
+# IDE
+.idea/
+.vscode/
+*.swp
+.DS_Store
+
+# 日志
+*.log
+logs/
