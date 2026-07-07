@@ -1,131 +1,246 @@
-# ProtoForge Phase 3 — 玩家旅程端到端贯通
+# ProtoForge Phase 3 — 核心玩法落地 + 端到端贯通
 
-> 目标:让玩家从下载 .exe → 完成关卡 → 看到作品 → 上传 Steam 创意工坊,端到端跑通,无白屏 / 404 / 数据丢失任何一个断点
-> 起点:Phase 2 完成(后端 51 passed,前端 3 passed),但有 4 个 P0 代码 bug 必须修
-> 范围:只修 P0 4 项(代码层面),不引入新功能
-> 不修 P1+ 项(等 Phase 3.5/4)
+> 目标:把今天(2026-07-07)6 轮决策的产品级承诺**真正做到代码里**,让 ProtoForge 从"框架"变成"能玩的策略游戏"
+> 排序原则:**核心玩法(N1 + 4 档 + 退出惩罚)优先,P0 bug 修复垫底**
+> 起点:Phase 2 完成(后端 51 passed,前端 3 passed)
+> 范围:6 个 task,按"产品价值密度"排序
 
 ---
 
-## Task 1: P0 C1 — Tauri 端口不一致修复
+## Task 1: N1 完整封装 — proto-language + ML 模型 + 本地 LLM 打包进游戏
 
-### 问题描述
-- `apps/web/vite.config.ts` proxy 写 `/api → http://127.0.0.1:7654`
-- `apps/desktop/src-tauri/src/sidecar.rs` sidecar 实际监听 **7655**
-- **Tauri 打包后** Vite proxy 不生效(只 dev 模式有效),生产 100% 不可用
-- 玩家下载 .exe 双击 → 进入游戏 → 看到登录页 → 点"开始游戏" → 白屏 / 404
+### 产品级承诺
+- 安装包 8-12GB,Python 解释器内嵌,proto-language + ML 模型 + 本地 LLM 全部 bundled
+- 玩家双击 .exe → 直接玩,**全程无下载、无网络等待、无弹窗**
+- Qwen2.5-7B GGUF 量化打包,llama.cpp 推理引擎打包
 
-### 修复方案(选最简)
-1. **统一端口**:`PROTOFORGE_API_PORT` 单一来源,sidecar 与 vite proxy 都读这个 env,默认 7654
-2. **Tauri 生产用 absolute URL**:sidecar 启动时把端口写到 `app_data_dir/api_port.json`,前端 build 时通过 `__TAURI_IPC__` 读
-3. **失败 fallback**:sidecar 启动失败时,Tauri 弹"API 服务启动失败"提示而非白屏
+### 子任务分解
+1. **N1.1 vendor proto-language 源码**
+   - 克隆 `github.com/evo-design/proto-language` 到 `apps/api/vendor/proto-language/`
+   - 克隆子模块 `proto-tools` 到 `apps/api/vendor/proto-language/proto-tools/`
+   - 修改 `pyproject.toml` 用 `[tool.uv.sources]` 把 proto-tools 指向本地 path
+   - 验证:`python -c "import proto_language"` 成功
 
-### 涉及文件
-- `apps/web/vite.config.ts`(改端口来源)
-- `apps/desktop/src-tauri/src/sidecar.rs`(写端口文件)
-- `apps/desktop/src-tauri/src/commands.rs`(暴露读端口的命令)
-- `apps/web/src/lib/api.ts`(读端口 → 构造 base URL)
-- `apps/desktop/src-tauri/tauri.conf.json`(确认配置)
+2. **N1.2 vendor ML 模型权重**
+   - 下载 ESM2-150M safetensors → `apps/api/vendor/models/esm2-150m/`
+   - 下载 SpliceAI Keras → `apps/api/vendor/models/spliceai/`
+   - 下载 SpliceTransformer-base PyTorch → `apps/api/vendor/models/splice-transformer/`
+   - 验证:每个模型加载 < 3s,总分计算正确
+
+3. **N1.3 vendor 本地 LLM(Qwen2.5-7B GGUF)**
+   - 下载 Qwen2.5-7B-Instruct-Q4_K_M.gguf → `apps/api/vendor/llm/qwen2.5-7b-instruct-q4_k_m.gguf`
+   - vendor llama.cpp Python wheel(避免编译)
+   - 写 `apps/api/app/local_llm.py` 封装 llama.cpp 调用
+   - 验证:玩家进游戏 → 首次加载 5-10s,之后常驻
+
+4. **N1.4 嵌入 Python 解释器到 Tauri bundle**
+   - 修改 `apps/desktop/src-tauri/tauri.conf.json` 把 `vendor/` 加到 `bundle.resources`
+   - 写 `scripts/build_release.sh` 一步打包:vendor + Python 嵌入 + ML 模型 + LLM
+   - 验证:`pnpm tauri build` 产出 .exe 大小在 8-12GB 区间
+
+5. **N1.5 引导页接 vendor 资源**
+   - 引导页第 1 步选"本地 LLM" → 自动检测 vendor 路径,加载 bundled 模型
+   - 不再依赖玩家自己装 Ollama
 
 ### 验收
-- [ ] 端口 7654 在 dev 和 prod 一致
-- [ ] Tauri release 模式下能正常调 API
-- [ ] sidecar 启动失败时 Tauri 弹错误而非白屏
-- [ ] 后端 51 passed 不变
-- [ ] 前端 3 passed 不变
+- [ ] `import proto_language` 在 ProtoForge .exe 内置 Python 中成功
+- [ ] ESM2/SpliceAI/SpliceTransformer 都能加载并打分
+- [ ] Qwen2.5-7B 在 llama.cpp 上能对话
+- [ ] `pnpm tauri build` 产出 .exe 大小 8-12GB
+- [ ] 玩家双击 .exe → 进游戏 → 5-10s 后 LLM 可用,无任何弹窗
+- [ ] 后端新增 3-5 个测试覆盖 vendor 资源加载
+- [ ] 后端 51 → 55+ passed
 
 ---
 
-## Task 2: P0 B1 — RiskGatePage 通关后自动保存到 Gallery
+## Task 2: 4 档难度落地 — 不跟硬件挂钩,默认走急锻
 
-### 问题描述
-- `apps/web/src/pages/RiskGatePage.tsx` 通关后只 `navigate("/gallery")`
-- **没有** `galleryApi.create()` 调用
-- 玩家通关后作品**只活在内存,刷新就丢**
-- `apps/web/src/lib/api.ts` 已有 `galleryApi.create()` 但调用点 = 0
+### 产品级承诺
+- 4 档(急锻/主锻/古法锻/晶种培育)按难度分,不按硬件
+- 时长 C 方案(2-5s / 30s-2min / 5-15min / 30min-2h)
+- 启动默认走急锻(2-5 秒)
+- 玩家可在 Settings 升级档位
+- 可同时锻造多个(急锻/主锻 1 个,古法锻 3 个,晶种培育 5 个)
 
-### 修复方案
-1. **RiskGatePage 答完所有题 → 提交判定 → 通过 → 调 `galleryApi.create()`**
-2. **保存内容**:run_id + intron 序列 + fasta + 评分 + 任务 ID + 玩家通关时间
-3. **错误处理**:save 失败弹 toast,玩家重试;不阻塞 navigate 到 gallery 页
-4. **localStorage 缓存**:玩家最近一次通关结果,刷新页面仍能看到
+### 子任务分解
+1. **改 `apps/api/app/proto/engine.py`**
+   - `run_forge` 接受 `ritual` 参数(急锻/主锻/古法锻/晶种培育)
+   - 不再根据 `RitualInfo` 的 `min_gpu_mb` 自动降级
+   - 根据 `ritual` 决定 MCMC 步数 + 同时锻造数
 
-### 涉及文件
-- `apps/web/src/pages/RiskGatePage.tsx`(主改)
-- `apps/web/src/lib/api.ts`(加 `getRecentRun` 缓存接口)
-- `apps/web/src/pages/GalleryPage.tsx`(空状态加引导)
-- `apps/web/src/components/Toast.tsx`(新增全局 toast 组件,供风险门失败用)
+2. **改 `apps/api/app/routers/forge.py`**
+   - `forge_run` 接受 `ritual` 字段
+   - 推荐 API(`/ritual/recommend`)默认返 `急锻`
+
+3. **改 `apps/web/src/pages/ForgePage.tsx`**
+   - 加档位选择器(4 选 1)
+   - 显示当前档位预估时长
+   - 默认选中急锻
+
+4. **改 `apps/web/src/pages/SettingsPage.tsx`(新增)**
+   - 玩家主动改默认档位
+
+5. **改测试**
+   - 跑 4 档 = 都成功(不依赖硬件)
+   - 默认 ritual = 急锻
+   - 改 1 档不破坏现有 51 个测试
 
 ### 验收
-- [ ] 通关后自动调 galleryApi.create,玩家不点按钮
-- [ ] Gallery 页面能看到刚保存的作品
-- [ ] 失败有 toast 提示,不白屏
-- [ ] localStorage 缓存生效(刷新仍在)
-- [ ] 新增 2-3 个 vitest 测试覆盖 RiskGatePage 自动保存
-- [ ] 后端 51 passed 不变
-- [ ] 前端 3 → 5 passed
+- [ ] 4 档全部跑通,玩家在 4-12GB 内存机器上都能玩
+- [ ] 默认 ritual = 急锻
+- [ ] 同时锻造数符合 1/1/3/5
+- [ ] 后端 51 passed 不变 + 4 个新测试 = 55 passed
+- [ ] 前端 3 passed 不变 + 1 个新测试 = 4 passed
 
 ---
 
-## Task 3: P0 A1 — Gallery router 改 async def
+## Task 3: 退出惩罚 — 根据"现实是否计算完"决定
 
-### 问题描述
-- `apps/api/app/routers/gallery.py` 用 `def` 不是 `async def`
-- 底层 `gallery_store.add/list_all/get` 是 sync wrapper,内部 `asyncio.run(_add_sqlite(req))`
-- TestClient 跑 anyio 线程,不暴露
-- **生产用 uvicorn 单 loop 模式**,FastAPI 在 event loop 线程跑 sync handler,`asyncio.run()` 立刻抛 `RuntimeError: asyncio.run() cannot be called from a running event loop`
+### 产品级承诺
+- 4 档都生效:玩家退出时**计算已跑完 = 保留**,**没跑完 = 失败**
+- UI 顶部红色横幅:「⚠️ 锻造中退出游戏会有概率失败」
+- 玩家看不到具体百分比
 
-### 修复方案
-1. **改 `routers/gallery.py` 全部路由为 `async def`**
-2. **改 `gallery_store.py` 把 sync wrapper 删掉,直接提供 `async` 函数**(`_add_sqlite` / `_list_sqlite` / `_get_sqlite`)
-3. **新增 1 个测试**:用真实 event loop 调 `add_artifact`,确保不抛 `RuntimeError`
+### 子任务分解
+1. **改 `apps/api/app/proto/engine.py`**
+   - `run_forge` 把计算状态写到 SQLite `runs` 表(状态:running / done / failed)
+   - 玩家退出前不主动保存中间状态
 
-### 涉及文件
-- `apps/api/app/routers/gallery.py`(改 async)
-- `apps/api/app/gallery_store.py`(改 async,删 sync wrapper)
-- `apps/api/tests/test_gallery_api.py`(加 event-loop 测试)
+2. **改 `apps/web/src/components/ForgingBanner.tsx`(新增)**
+   - 顶部红色横幅,任何时候只要 `forging=true` 就显示
+   - 文案:「⚠️ 锻造中退出游戏会有概率失败」
+
+3. **改 `apps/web/src/lib/api.ts`**
+   - `forgeApi.run()` 返回 run_id,玩家用 run_id 查状态
+   - 加 `forgeApi.getRun(runId)` 查运行状态(如果 done,带结果)
+
+4. **前端加 beforeunload 监听**
+   - `forging=true` 时,玩家点 X 关浏览器 → 弹原生 confirm
+   - 文案:「锻造还没完成,确定要退出吗?」
 
 ### 验收
-- [ ] 路由全部 async
-- [ ] 真实 event loop 跑通不爆 RuntimeError
-- [ ] 后端 51 → 52 passed
-- [ ] 前端不变
+- [ ] forging 时显示红色横幅
+- [ ] 玩家关浏览器弹原生 confirm
+- [ ] run_id 持久化,刷新可查状态
+- [ ] 后端 55 passed 不变
+- [ ] 前端 4 → 6 passed
 
 ---
 
-## Task 4: P0 A2 — run_forge 静默退化修复
+## Task 4: 引导页 — 3 步配置,云 API 优先
 
-### 问题描述
-- `apps/api/app/proto/engine.py:104-110` 有 4 个静默退化:
-  1. `_load_template(mission_id)` 找不到只 `print` 警告就继续 → typo mission_id 拿到 0 长 intron
-  2. MCMC step=0 时 `last_score` 是 None,代码用 `if last_score is not None: cur = last_score` 跳过 → step=0 等同 preference 一次生成
-  3. seed 参数对 standard/ancient/crystal 仪式没生效(seed 只传进 `_generate_intron`,MCMC 的随机状态没 seed)
-  4. PWM 评分返回 None 时静默走零权重
+### 产品级承诺
+- 首次启动显示 3 步引导
+- 第 1 步默认推荐云 API
+- 引导页有"免费 API 渠道推荐"链接(跳转 GitHub)
+- 完成后永不再问(除非主动进 Settings)
 
-### 修复方案
-1. **#1**:`_load_template` 找不到直接 `raise ValueError(f"mission template {id} not found")` — 跟 router 现有 404 行为一致
-2. **#2**:MCMC step=0 时 `cur_score = _score(generator, seed_seq)`,正常初始化 last_score
-3. **#3**:MCMC 入口加 `rng = random.Random(seed + iteration)`,确保 seed 真的生效
-4. **#4**:PWM 评分返回 None 时 `raise ValueError("scorer returned None")`,router 返 500
+### 子任务分解
+1. **改 `apps/web/src/pages/OnboardingPage.tsx`**
+   - 3 步表单(LLM 选择 / API key 填 / 档位确认)
+   - 默认选项 = ☁️ 云 API
+   - 跳 GitHub `awesome-free-api` 链接(占位 URL,Phase 4 替换)
 
-### 涉及文件
-- `apps/api/app/proto/engine.py`(主改)
-- `apps/api/tests/test_engine_smoke.py`(加 4 个回归测试,各覆盖 1 个静默退化)
+2. **改 `apps/api/app/routers/onboarding.py`**
+   - `/onboarding/save` 持久化玩家选择
+   - 启动时 `/onboarding/state` 检查"是否已配置",未配置 → 前端跳引导页
+
+3. **改 `apps/web/src/App.tsx`**
+   - 路由加 `/onboarding`(首次启动跳转)
+   - 已配置玩家走 `/`
+
+4. **加测试**
+   - 引导页 3 步流程 vitest
+   - onboarding/save API 测试
 
 ### 验收
-- [ ] typo mission_id 抛 ValueError(不是 0 长 intron)
-- [ ] MCMC step=0 真的跑 1 步(不是 0 步)
-- [ ] seed=42 两次跑同 mission 结果一致(可重现)
-- [ ] PWM 失败抛 ValueError(不是静默)
-- [ ] 后端 51 → 55 passed
-- [ ] 前端不变
+- [ ] 首次启动跳引导页,3 步配置完后跳主页
+- [ ] 默认推荐 ☁️ 云 API
+- [ ] "免费 API 渠道"链接可点
+- [ ] 已配置玩家不会再被引导
+- [ ] 后端 55 passed 不变 + 2 个新测试 = 57 passed
+- [ ] 前端 6 → 9 passed
 
 ---
 
-## 全量验证(所有 4 个 Task 完成后)
+## Task 5: Steam 创意工坊自动上传 — 通关后,玩家不点按钮
 
-- [ ] 后端 55 passed
-- [ ] 前端 5 passed
+### 产品级承诺
+- 玩家通关 RiskGatePage → 自动调 Steam Workshop API 上传作品
+- 玩家不点按钮
+- 失败有 toast,不阻塞
+
+### 子任务分解
+1. **研究 Steam Workshop API**
+   - 用 `steamworks.js`(Node 库)或 Rust `steamworks` crate
+   - 上传接口:`ISteamUGC::SubmitItemUpdate`
+   - 玩家需要登录 Steam 客户端
+
+2. **改 `apps/desktop/src-tauri/src/commands.rs`**
+   - 加 `upload_to_steam_workshop(artifact)` 命令
+   - 调 steamworks 库上传
+
+3. **改 `apps/api/app/routers/gallery.py`**
+   - 加 `/api/gallery/auto_upload` 接口
+   - 接收通关后的作品,持久化到本地 + 转发给 Tauri 上传
+
+4. **改 `apps/web/src/pages/RiskGatePage.tsx`**
+   - 通关后调 `galleryApi.autoUpload(artifact)`
+   - 不阻塞 navigate 到 gallery
+
+5. **加测试**
+   - autoUpload 失败 → 玩家仍然能进 gallery 页(toast 提示)
+   - 上传成功 → Gallery 列表显示
+
+### 验收
+- [ ] 通关自动上传(玩家不点按钮)
+- [ ] 上传失败有 toast,玩家不卡死
+- [ ] Tauri release 模式下能调 Steam Workshop
+- [ ] 后端 57 passed 不变 + 2 个新测试 = 59 passed
+- [ ] 前端 9 → 12 passed
+
+---
+
+## Task 6: P0 bug 修复 — 端到端跑通
+
+> **P0 4 项**:C1 Tauri 端口 / B1 Gallery 自动保存已被 Task 1-5 覆盖
+> **剩余** A1(asyncio.run)+ A2(run_forge 静默退化)实际上也已经覆盖
+> **真正的 P0 剩余** 是"4 档之后 rl 信息"(product.md 13 节里"完整封装打包脚本"+"ProtoForge 自家服务器"+"P0 代码 bug 修复"等)
+
+### 子任务分解
+1. **A1:改 `routers/gallery.py` 全部 `async def`**
+   - `gallery_store.py` 删 sync wrapper,直接 async
+   - 加 event-loop 集成测试
+
+2. **A2:`engine.py` 4 个静默退化**
+   - `_load_template` 找不到 → 抛 ValueError
+   - MCMC step=0 → 真的跑 1 步
+   - seed 真的生效(不是只传给 generator)
+   - PWM 失败 → 抛 ValueError
+
+3. **C1:Tauri 端口一致**
+   - vite.config.ts 与 sidecar.rs 统一读 `PROTOFORGE_API_PORT`
+   - 默认 7654
+
+4. **B1:Gallery 自动保存(已被 Task 5 覆盖,这里只补遗漏)**
+   - RiskGatePage 答完所有题 → 提交判定 → 通过 → 调 galleryApi.create
+   - localStorage 缓存最近一次结果
+
+### 验收
+- [ ] A1:production event loop 跑通
+- [ ] A2:4 个静默退化全修
+- [ ] C1:端口 7654 在 dev + prod 一致
+- [ ] B1:通关自动保存 + 失败不阻塞
+- [ ] 后端 59 → 63 passed
+- [ ] 前端 12 → 14 passed
+
+---
+
+## 全量验证(Task 1-6 全部完成)
+
+- [ ] 后端 63 passed
+- [ ] 前端 14 passed
 - [ ] 前端 build 成功
-- [ ] 4 个 P0 全部 commit 落地
-- [ ] RUNBOOK 更新到 Phase 3a
+- [ ] Tauri build 成功(产出 8-12GB .exe)
+- [ ] 玩家从下载 → 进游戏 → 通关 → 上传 Steam 创意工坊,端到端跑通
+- [ ] RUNBOOK 更新到 Phase 3
