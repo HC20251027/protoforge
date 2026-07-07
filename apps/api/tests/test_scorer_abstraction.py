@@ -84,17 +84,22 @@ def test_get_scorer_falls_back_when_transformer_unavailable(monkeypatch, capsys)
     assert "transformer 不可用" in captured.out
 
 
-def test_splice_transformer_init_requires_torch(monkeypatch):
-    """直接构造 SpliceTransformerScorer 在无 torch 时应给出友好错误。"""
-    import builtins
+def test_splice_transformer_scorer_runs_without_torch():
+    """SpliceTransformerScorer 不应再抛 NotImplementedError。
 
-    real_import = builtins.__import__
+    当前实装:不依赖 torch,使用 numpy + PWM(位置权重矩阵)做 donor/acceptor 打分。
+    """
+    s = SpliceTransformerScorer()
+    out = s.score("ATGCGT" * 10)
+    assert "splice_site_score" in out
+    assert 0.0 <= out["splice_site_score"] <= 1.0
 
-    def _fake_import(name, *args, **kwargs):
-        if name == "torch":
-            raise ImportError("simulated: torch not installed")
-        return real_import(name, *args, **kwargs)
 
-    monkeypatch.setattr(builtins, "__import__", _fake_import)
-    with pytest.raises(RuntimeError, match="torch"):
-        SpliceTransformerScorer()
+def test_splice_transformer_prefers_real_splice_motifs():
+    """真实 GT-AG 边界序列的剪接分应高于纯随机序列。"""
+    s = SpliceTransformerScorer()
+    good = "GT" + "ATGCATGC" * 8 + "AG"  # 强 donor/acceptor
+    bad = "ATGCATGC" * 10                 # 无 motif
+    g_score = s.score(good)["splice_site_score"]
+    b_score = s.score(bad)["splice_site_score"]
+    assert g_score > b_score, f"GT-AG 序列分({g_score})应高于随机({b_score})"

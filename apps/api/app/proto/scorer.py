@@ -74,29 +74,91 @@ class HeuristicScorer(Scorer):
 # ---------------------------------------------------------------------------
 
 class SpliceTransformerScorer(Scorer):
-    """基于 SpliceTransformer/ESM2 的真模型评分(Phase 2 接入)。
+    """Splice 位点评分器 — 简化版(无 torch 依赖)。
 
-    当前实现:延迟 import torch/transformers,失败则抛 RuntimeError,
-    由 `get_scorer()` 捕获并回退到启发式。
+    实现:用位置权重矩阵(PWM)对 donor/acceptor 位点打分。
+    - donor  位置窗口:序列前 6 nt(GT + 保守区)
+    - acceptor 位置窗口:序列后 16 nt(polypyrimidine tract + AG)
+    - 输出:归一化到 0~1 的剪接强度 + GC 含量 + 3-mer 熵
+
+    论文里 real SpliceTransformer / SpliceAI 可作为 Phase 3 升级,
+    接口不变,只换实现。
     """
 
     name = "transformer"
 
-    def __init__(self, model_id: str | None = None) -> None:
-        try:
-            import torch  # noqa: F401
-        except Exception as exc:  # pragma: no cover - 纯占位
-            raise RuntimeError(
-                "SpliceTransformer 评分器需要 torch,但当前环境未安装。"
-                "请 `pip install torch transformers` 或设置 PROTOFORGE_SPLICER=heuristic。"
-            ) from exc
-        self._model_id = model_id or "InstaDeepAI/splice-transformer-base"
+    # donor PWM(6 位置 × 4 碱基),行=位置,列=A/C/G/T 的 log-odds
+    _DONOR_PWM = [
+        {"G": 1.5, "A": 0.4, "C": -0.3, "T": 0.0},   # 5'ss -6
+        {"G": 0.2, "A": 1.4, "C": -0.1, "T": 0.3},   # 5'ss -5
+        {"G": 2.0, "A": -0.5, "C": -0.2, "T": 0.0},  # 5'ss -4 (G 必需)
+        {"T": 1.8, "A": -0.3, "C": 0.0, "G": -0.4},  # 5'ss -3
+        {"A": 1.3, "G": 0.5, "C": 0.0, "T": -0.2},   # 5'ss -2
+        {"G": 1.6, "A": 0.2, "C": 0.0, "T": -0.3},   # 5'ss -1
+    ]
+    # acceptor PWM(15 位置),典型 YAG/RAN 模式
+    _ACCEPTOR_PWM = [
+        {"T": 0.8, "C": 0.7, "A": 0.2, "G": -0.1},  # -15
+        {"T": 1.0, "C": 0.6, "A": 0.0, "G": -0.2},  # -14
+        {"T": 0.9, "C": 0.7, "A": 0.1, "G": -0.1},  # -13
+        {"T": 0.7, "C": 0.8, "A": 0.2, "G": -0.1},  # -12
+        {"T": 0.6, "C": 0.9, "A": 0.2, "G": 0.0},   # -11
+        {"T": 0.5, "C": 0.9, "A": 0.3, "G": 0.0},   # -10
+        {"T": 0.4, "C": 0.8, "A": 0.4, "G": 0.1},   # -9
+        {"T": 0.3, "C": 0.7, "A": 0.5, "G": 0.2},   # -8
+        {"T": 0.2, "C": 0.5, "A": 0.6, "G": 0.4},   # -7
+        {"C": 0.3, "T": 0.2, "A": 0.4, "G": 0.5},   # -6
+        {"A": 0.3, "C": 0.2, "T": 0.3, "G": 0.5},   # -5
+        {"A": 0.2, "C": 0.1, "T": 0.3, "G": 0.6},   # -4
+        {"A": 0.1, "T": 0.1, "C": 0.0, "G": 0.7},   # -3
+        {"A": 0.0, "T": 0.0, "C": 0.0, "G": 0.8},   # -2
+        {"G": 1.5, "A": 0.2, "T": 0.0, "C": -0.2},  # -1
+    ]
 
-    def score(self, seq: str) -> dict:  # pragma: no cover - 模型未实装
-        # 真实实现应: tokenize -> model(seq) -> softmax -> donor/acceptor score
-        raise NotImplementedError(
-            "SpliceTransformer 真模型接入留到 Phase 2;当前请使用启发式评分器。"
-        )
+    def __init__(self, model_id: str | None = None) -> None:
+        # Phase 2 简化实现不依赖 torch;若 Phase 3 装上 torch,
+        # 可在这里 `import torch` + 加载真实模型,接口不变。
+        self._model_id = model_id or "pwm-baseline"
+
+    def _pwm_score(self, window: str, pwm: list[dict]) -> float:
+        """位置权重矩阵打分:sum of log-odds,归一化到 0~1。"""
+        window = window.upper()
+        if len(window) < len(pwm):
+            return 0.0
+        raw = 0.0
+        for i, base in enumerate(window[:len(pwm)]):
+            raw += pwm[i].get(base, -1.0)
+        # 归一化:理论 max = sum(max in each position)
+        max_score = sum(max(row.values()) for row in pwm)
+        return max(0.0, min(1.0, raw / max_score))
+
+    def _gc(self, seq: str) -> float:
+        if not seq:
+            return 0.0
+        s = seq.upper()
+        return sum(1 for c in s if c in "GC") / len(s)
+
+    def _kmer_entropy(self, seq: str, k: int = 3) -> float:
+        if len(seq) < k:
+            return 0.0
+        kmers = [seq[i:i + k] for i in range(len(seq) - k + 1)]
+        counts: dict[str, int] = {}
+        for kmer in kmers:
+            counts[kmer] = counts.get(kmer, 0) + 1
+        total = sum(counts.values())
+        import math
+        return -sum((c / total) * math.log2(c / total) for c in counts.values())
+
+    def score(self, seq: str) -> dict:
+        seq = seq.upper()
+        donor = self._pwm_score(seq[:6], self._DONOR_PWM)
+        acceptor = self._pwm_score(seq[-15:], self._ACCEPTOR_PWM)
+        splice = min(1.0, 0.55 * donor + 0.55 * acceptor)
+        return {
+            "gc_content": round(self._gc(seq), 3),
+            "splice_site_score": round(splice, 3),
+            "kmer_entropy": round(self._kmer_entropy(seq) / 2.5, 3),
+        }
 
 
 # ---------------------------------------------------------------------------
