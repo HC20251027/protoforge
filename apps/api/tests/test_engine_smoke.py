@@ -44,3 +44,28 @@ def test_mcmc_steps_affects_result():
     assert r10.scores["primary"] >= r1.scores["primary"] - 0.001
     # primary 不应恒为 0(至少 preference 模式有一定剪接分)
     assert r10.scores["primary"] > 0.0
+
+
+def test_generators_are_statistically_distinct():
+    """uniform / random / preference 应产生不同特征的序列。"""
+    from app.proto.engine import _generate_intron
+
+    N = 5
+    uniform_seqs = [_generate_intron(120, "uniform", seed=10 + i) for i in range(N)]
+    random_seqs = [_generate_intron(120, "random", seed=10 + i) for i in range(N)]
+    pref_seqs = [_generate_intron(120, "preference", seed=10 + i) for i in range(N)]
+
+    # preference 模式必须有 GT...AG 边界
+    for s in pref_seqs:
+        assert s.startswith("GT"), f"preference 应以 GT 开头: {s[:10]}"
+        assert s.endswith("AG"), f"preference 应以 AG 结尾: {s[-10:]}"
+
+    # random 模式应有非均匀碱基频率(偏 GC)
+    gc_count = sum(1 for s in random_seqs for c in s if c in "GC")
+    at_count = sum(1 for s in random_seqs for c in s if c in "AT")
+    assert gc_count > at_count, f"random 应偏 GC: gc={gc_count} at={at_count}"
+
+    # uniform 应大致均匀
+    u_gc = sum(1 for s in uniform_seqs for c in s if c in "GC")
+    u_at = sum(1 for s in uniform_seqs for c in s if c in "AT")
+    assert abs(u_gc - u_at) < N * 120 * 0.15, f"uniform 应大致均匀: gc={u_gc} at={u_at}"

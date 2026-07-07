@@ -42,13 +42,16 @@ def _load_template(mission_id: str) -> dict:
 
 
 def _generate_intron(length: int, generator: str, seed: int | None) -> str:
-    """生成候选内含子序列(启发式,Phase 1 不接真 proto-language)。"""
+    """生成候选内含子序列(三种模式各有不同的统计特征)。"""
     rng = random.Random(seed)
     if generator == "uniform":
+        # 完全均匀:等概率 ATGC
         return "".join(rng.choices("ATGC", k=length))
     if generator == "random":
-        return "".join(rng.choices("ATGC", k=length))
-    # preference: GT-AG 边界,中段高熵
+        # 偏 GC 分布(模拟基因组高 GC 区段)
+        # weights 对应 "ATGC": A=0.2, T=0.2, G=0.3, C=0.3 -> GC=0.6, AT=0.4
+        return "".join(rng.choices("ATGC", weights=[0.2, 0.2, 0.3, 0.3], k=length))
+    # preference: GT-AG 边界 + 中段高熵
     seq = list(rng.choices("ATGC", k=length))
     if length >= 6:
         seq[0:2] = list("GT")
