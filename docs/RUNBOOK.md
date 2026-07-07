@@ -1,6 +1,6 @@
-# ProtoForge 跑通手册(Phase 1)
+# ProtoForge 跑通手册(Phase 2)
 
-目标:从干净环境到看见 UI 上的"原体锻炉"页面,所有 40 个后端测试 + 3 个前端测试通过。
+目标:从干净环境到看见 UI 上的"原体锻炉"页面,所有 51 个后端测试 + 3 个前端测试通过。
 
 ## 1. 前置依赖
 
@@ -12,7 +12,8 @@
 | Rust      | 1.78+         | Tauri 编译(可选) |
 
 侧车只依赖纯 Python 包,**无需 torch / biopython**。已锁定到:
-fastapi, uvicorn, pydantic, pydantic-settings, sqlalchemy, aiosqlite, httpx, pytest。
+fastapi, uvicorn, pydantic, pydantic-settings, sqlalchemy, aiosqlite, httpx, numpy, pytest。
+其中 numpy 是 SpliceTransformer 评分器(PWM 实现)的运行时依赖。
 
 ## 2. 安装
 
@@ -30,7 +31,7 @@ pnpm install --store-dir .pnpm-store
 # 装侧车依赖(到用户级 site-packages,避免污染全局 site)
 python -m pip install --user `
   fastapi 'uvicorn[standard]' pydantic pydantic-settings `
-  sqlalchemy aiosqlite httpx pytest pytest-asyncio
+  sqlalchemy aiosqlite httpx numpy pytest pytest-asyncio
 ```
 
 ## 3. 跑测试
@@ -38,7 +39,7 @@ python -m pip install --user `
 ```powershell
 # 侧车
 cd apps/api
-python -m pytest -q        # 期望:40 passed
+python -m pytest -q        # 期望:51 passed
 
 # 前端
 cd ..\web
@@ -96,20 +97,23 @@ pnpm tauri dev
 - `tests/test_health.py` × 2 — 健康检查
 - `tests/test_polar_template.py` × 1 — 任务模板加载
 - `tests/test_engine_smoke.py` × 3 — proto 引擎 smoke + MCMC + generator 差异
-- `tests/test_scorer_abstraction.py` × 6 — 评分器抽象 + transformer 回退
-- `tests/test_forge_api.py` × 4 — `/api/forge/*` 路由
+- `tests/test_scorer_abstraction.py` × 7 — 评分器抽象 + transformer 回退
+- `tests/test_forge_api.py` × 7 — `/api/forge/*` 路由(含 natural_language)
 - `tests/test_missions_risk_api.py` × 6 — missions + risk gate
 - `tests/test_gallery_api.py` × 5 — gallery API(内存)
 - `tests/test_gallery_sqlite.py` × 2 — gallery SQLite 后端
 - `tests/test_onboarding_api.py` × 5 — onboarding 3 provider
 - `tests/test_translate_api.py` × 5 — NL 翻译
 - `tests/test_e2e_player_journey.py` × 2 — 端到端玩家旅程
+- `tests/test_llm_chat.py` × 4 — 新增:LLMProvider.chat() 抽象层
 - 前端:Home × 3
 
-## 8. 已知边界(Phase 1.5)
+## 8. 已知边界(Phase 2)
 
-- 启发式评分:不接 ESM2/SpliceTransformer,基线 32% 成功率;Phase 2 接入真模型。
-- LLM 翻译:disabled 模式 = 关键词启发式;cloud/local 模式仅当 provider 在线时生效。
-- MCMC 搜索:简化版 Metropolis-Hastings(单点突变 + 温度接受),非真实生物搜索;Phase 2 可接 SpliceTransformer 打分。
-- Tauri sidecar:已实现 spawn + health 轮询(`sidecar.rs`),但 `cargo check` 在 Windows 长路径 + Defender 环境下会遇 `os error 998`,需设 `CARGO_TARGET_DIR` 到短路径。
+- 启发式评分:仍是默认 scorer;SpliceTransformerScorer 现在有真 PWM 实现(基于位置权重矩阵的 donor/acceptor 打分,无需 torch),可通过环境变量 `PROTOFORGE_SPLICER=transformer` 切换。
+- LLM 翻译 / chat() 抽象层 → 完整:`LLMProvider` 基类已补 `chat(messages, temperature, max_tokens, config)`,`CloudProvider` / `LocalProvider` / `DisabledProvider` 三个实现;`translate.py` 改为统一调用 `provider.chat()` 而非自己 `httpx.post()`。
+- MCMC 搜索:仍简化版(单点突变 + Metropolis 温度接受),非真实生物搜索;Phase 3 可接真 transformer 打分(已留好接口)。
+- Tauri sidecar:已实装(`sidecar.rs` 的 spawn + health 轮询);`cargo check` 在 Windows 长路径 + Defender 环境下仍可能遇 `os error 998`,需设 `CARGO_TARGET_DIR` 到短路径。
+- 新增:numpy 是 SpliceTransformer 评分器的运行时依赖(`pyproject.toml` 中 `numpy>=1.26`)。
+- 新增:`ForgeRequest.natural_language` 字段 — 玩家在 forge 页输入自然语言描述后,服务端先调 translate 再 forge,一步到位(无需客户端两步调用)。
 - 数据目录默认在项目目录下的 `.protoforge/data/`,可通过 `PROTOFORGE_DATA_DIR` 覆盖。
