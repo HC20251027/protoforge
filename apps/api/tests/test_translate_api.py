@@ -78,3 +78,45 @@ def test_translate_falls_back_when_llm_fails(client, monkeypatch):
     assert "启发式" in body["explanation"] or "回退" in body["explanation"]
     # 启发式仍应给出 min_target_splice 提升
     assert body["values"]["min_target_splice"] > 0.65
+
+
+def test_translate_uses_llm_chat(client, monkeypatch):
+    """translate 应该走 LLMProvider.chat() 而非自己 httpx。"""
+    captured = {"called": False, "messages": None, "temperature": None}
+
+    class FakeProvider:
+        name = "cloud"
+
+        def chat(self, messages, temperature=0.2, max_tokens=256, config=None):
+            captured["called"] = True
+            captured["messages"] = messages
+            captured["temperature"] = temperature
+            return '{"min_target_splice": 0.9}'
+
+    # 切到 cloud(需要 api_key 才能正常 chat)
+    client.post(
+        "/api/onboarding/save",
+        json={
+            "active": "cloud",
+            "providers": {
+                "cloud": {
+                    "base_url": "https://api.deepseek.com/v1",
+                    "model": "deepseek-chat",
+                    "api_key": "sk-test",
+                }
+            },
+        },
+    )
+    # monkey patch LLMProvider:把 _PROVIDERS 字典里 "cloud" 键替换为 FakeProvider
+    from app.llm import _PROVIDERS
+
+    monkeypatch.setitem(_PROVIDERS, "cloud", FakeProvider())
+
+    resp = client.post(
+        "/api/translate",
+        json={"mission_id": "polar-glow-v1", "text": "极严"},
+    )
+    body = resp.json()
+    assert captured["called"] is True
+    assert body["values"]["min_target_splice"] == 0.9
+    assert body["provider"] == "cloud"

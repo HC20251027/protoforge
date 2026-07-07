@@ -11,8 +11,6 @@ import json
 import re
 from typing import Iterable
 
-import httpx
-
 from app.llm import load_state
 from app.schemas import Mission
 
@@ -63,53 +61,39 @@ def _heuristic_translate(text: str, mission: Mission) -> tuple[dict, str]:
 
 def _llm_translate(text: str, mission: Mission) -> tuple[dict, str]:
     """用当前 LLM provider 翻译。返回 (slider_values, explanation)。"""
+    from app.llm import _PROVIDERS, load_state
+
     state = load_state()
     if state.active == "disabled":
         raise RuntimeError("LLM disabled")
+    provider = _PROVIDERS.get(state.active)
+    if provider is None:
+        raise RuntimeError(f"未知 provider: {state.active}")
 
     cfg = state.providers.get(state.active)
-    if cfg is None or not cfg.base_url or not cfg.model:
-        raise RuntimeError("current provider not configured")
+    schema_hint = {
+        p.key: {"min": p.min, "max": p.max, "step": p.step, "default": p.default}
+        for p in mission.sliders
+    }
+    messages = [
+        {
+            "role": "system",
+            "content": "只输出 JSON,不要任何解释。",
+        },
+        {
+            "role": "user",
+            "content": (
+                f"你是 ProtoForge 的参数翻译器。玩家给你一段自然语言描述,"
+                f"你要把它转成以下滑块值(返回严格 JSON,键名不要改,值在合法区间内):\n"
+                f"{json.dumps(schema_hint, ensure_ascii=False)}\n"
+                f"任务背景: {mission.title}\n"
+                f"任务描述: {mission.description}\n"
+                f"玩家描述: {text}"
+            ),
+        },
+    ]
 
-    keys = [p.key for p in mission.sliders]
-    schema_hint = {p.key: {"min": p.min, "max": p.max, "step": p.step, "default": p.default} for p in mission.sliders}
-
-    prompt = (
-        "你是 ProtoForge 的参数翻译器。玩家给你一段自然语言描述,"
-        f"你要把它转成以下滑块值(返回严格 JSON,键名不要改,值在合法区间内):\n"
-        f"{json.dumps(schema_hint, ensure_ascii=False)}\n"
-        f"任务背景: {mission.title}\n"
-        f"任务描述: {mission.description}\n"
-        f"玩家描述: {text}\n"
-        "只输出 JSON,不要任何解释。"
-    )
-
-    try:
-        r = httpx.post(
-            f"{cfg.base_url.rstrip('/')}/chat/completions",
-            headers={
-                "Authorization": f"Bearer {cfg.api_key or 'ollama'}",
-                "Content-Type": "application/json",
-            },
-            json={
-                "model": cfg.model,
-                "messages": [
-                    {"role": "system", "content": "只输出 JSON。"},
-                    {"role": "user", "content": prompt},
-                ],
-                "temperature": 0.2,
-            },
-            timeout=30.0,
-        )
-    except httpx.HTTPError as exc:
-        raise RuntimeError(f"LLM 网络错误: {exc}") from exc
-
-    if r.status_code != 200:
-        raise RuntimeError(f"LLM HTTP {r.status_code}: {r.text[:200]}")
-
-    payload = r.json()
-    content = payload.get("choices", [{}])[0].get("message", {}).get("content", "")
-    # 提取 JSON(可能夹在 ```json ... ``` 中)
+    content = provider.chat(messages, temperature=0.2, max_tokens=512, config=cfg)
     match = re.search(r"\{[\s\S]*\}", content)
     if not match:
         raise RuntimeError("LLM 输出不含 JSON")
