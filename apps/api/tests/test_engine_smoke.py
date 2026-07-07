@@ -31,3 +31,16 @@ def test_run_forge_with_generator() -> None:
     assert result.run_id.startswith("run_")
     assert result.ritual in ("swift", "standard", "ancient", "crystal")
     assert result.duration_ms >= 0
+
+
+def test_mcmc_steps_affects_result():
+    """不同 mcmc_steps 应该给出不同的(或更好的)结果。"""
+    from app.proto.engine import run_forge
+
+    base_params = {"min_target_splice": 0.5, "max_off_target": 0.3}
+    r1 = run_forge("polar-glow-v1", {**base_params, "mcmc_steps": 1}, "preference", seed=42)
+    r10 = run_forge("polar-glow-v1", {**base_params, "mcmc_steps": 10}, "preference", seed=42)
+    # 更多步数 = 至少不比少步差(搜索更充分)
+    assert r10.scores["primary"] >= r1.scores["primary"] - 0.001
+    # primary 不应恒为 0(至少 preference 模式有一定剪接分)
+    assert r10.scores["primary"] > 0.0

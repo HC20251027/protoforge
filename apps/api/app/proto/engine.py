@@ -5,6 +5,7 @@ Phase 1:不直接 import proto-language(它要 micromamba + 一堆生物模型),
 """
 from __future__ import annotations
 import time
+import math
 import random
 import json
 from pathlib import Path
@@ -55,6 +56,67 @@ def _generate_intron(length: int, generator: str, seed: int | None) -> str:
     return "".join(seq)
 
 
+def _mutate(seq: str, rng: random.Random, rate: float = 0.05) -> str:
+    """单点突变:随机替换 rate 比例的碱基。"""
+    bases = list(seq)
+    n = max(1, int(len(bases) * rate))
+    for _ in range(n):
+        i = rng.randint(0, len(bases) - 1)
+        bases[i] = rng.choice("ATGC")
+    return "".join(bases)
+
+
+def _mcmc_search(
+    length: int,
+    generator: str,
+    seed: int | None,
+    steps: int,
+    params: dict,
+) -> tuple[str, dict]:
+    """简化的 Metropolis-Hastings 搜索:生成初始 -> 迭代突变 -> 取最优。"""
+    rng = random.Random(seed)
+    min_target = float(params.get("min_target_splice", 0.65))
+    max_off = float(params.get("max_off_target", 0.20))
+    w_alpha = float(params.get("weight_alpha", 0.5))
+    w_beta = float(params.get("weight_beta", 0.35))
+
+    best_seq = _generate_intron(length, generator, seed)
+    best_raw = score_intron(best_seq, min_target_splice=min_target, max_off_target_splice=max_off)
+    best_primary = max(
+        0.0,
+        w_alpha * best_raw["splice_site_score"]
+        + w_beta * (1.0 - best_raw["orthogonality"])
+        - 0.1 * best_raw["gc_penalty"]
+        - 0.05 * best_raw["length_norm"],
+    )
+
+    current_seq = best_seq
+    current_primary = best_primary
+    temp = float(params.get("temperature", 0.8))
+
+    for _ in range(steps):
+        candidate = _mutate(current_seq, rng, rate=0.05)
+        raw = score_intron(candidate, min_target_splice=min_target, max_off_target_splice=max_off)
+        primary = max(
+            0.0,
+            w_alpha * raw["splice_site_score"]
+            + w_beta * (1.0 - raw["orthogonality"])
+            - 0.1 * raw["gc_penalty"]
+            - 0.05 * raw["length_norm"],
+        )
+        # Metropolis 接受准则
+        delta = primary - current_primary
+        if delta > 0 or (temp > 0 and rng.random() < math.exp(delta / max(temp, 0.001))):
+            current_seq = candidate
+            current_primary = primary
+        if primary > best_primary:
+            best_seq = candidate
+            best_raw = raw
+            best_primary = primary
+
+    return best_seq, best_raw
+
+
 def run_forge(mission_id: str, params: dict, generator: str, seed: int | None = None) -> ForgeResult:
     """端到端跑一次 forge(生成 + 评分 + 仪式名)。"""
     tpl = _load_template(mission_id)
@@ -69,8 +131,12 @@ def run_forge(mission_id: str, params: dict, generator: str, seed: int | None = 
     length = max(80, min(250, length))
 
     start = time.perf_counter()
-    intron = _generate_intron(length, generator, seed)
-    raw = score_intron(intron, min_target_splice=min_target, max_off_target_splice=max_off)
+    mcmc_steps = int(params.get("mcmc_steps", 50))
+    if mcmc_steps <= 1:
+        intron = _generate_intron(length, generator, seed)
+        raw = score_intron(intron, min_target_splice=min_target, max_off_target_splice=max_off)
+    else:
+        intron, raw = _mcmc_search(length, generator, seed, mcmc_steps, params)
 
     primary = max(
         0.0,
