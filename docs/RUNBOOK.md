@@ -95,7 +95,7 @@ pnpm tauri dev
 
 - `tests/test_health.py` × 2 — 健康检查
 - `tests/test_polar_template.py` × 1 — 任务模板加载
-- `tests/test_engine_smoke.py` × 1 — proto 引擎 smoke
+- `tests/test_engine_smoke.py` × 3 — proto 引擎 smoke + MCMC + generator 差异
 - `tests/test_scorer_abstraction.py` × 6 — 评分器抽象 + transformer 回退
 - `tests/test_forge_api.py` × 4 — `/api/forge/*` 路由
 - `tests/test_missions_risk_api.py` × 6 — missions + risk gate
@@ -106,9 +106,10 @@ pnpm tauri dev
 - `tests/test_e2e_player_journey.py` × 2 — 端到端玩家旅程
 - 前端:Home × 3
 
-## 8. 已知边界(Phase 1)
+## 8. 已知边界(Phase 1.5)
 
 - 启发式评分:不接 ESM2/SpliceTransformer,基线 32% 成功率;Phase 2 接入真模型。
 - LLM 翻译:disabled 模式 = 关键词启发式;cloud/local 模式仅当 provider 在线时生效。
-- Tauri sidecar spawn:Phase 1.5 任务,目前需手动启 Python 侧车。
-- 数据目录默认在仓库外的 `~/.protoforge/`,可通过 `PROTOFORGE_DATA_DIR` 覆盖。
+- MCMC 搜索:简化版 Metropolis-Hastings(单点突变 + 温度接受),非真实生物搜索;Phase 2 可接 SpliceTransformer 打分。
+- Tauri sidecar:已实现 spawn + health 轮询(`sidecar.rs`),但 `cargo check` 在 Windows 长路径 + Defender 环境下会遇 `os error 998`,需设 `CARGO_TARGET_DIR` 到短路径。
+- 数据目录默认在项目目录下的 `.protoforge/data/`,可通过 `PROTOFORGE_DATA_DIR` 覆盖。
