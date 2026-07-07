@@ -54,8 +54,21 @@ def _forge_result_to_response(result) -> ForgeResponse:
 
 @router.post("/run", response_model=ForgeResponse)
 def forge_run(req: ForgeRequest) -> ForgeResponse:
+    params = dict(req.params)
+    if req.natural_language and req.natural_language.strip():
+        from app.missions import get_mission
+        from app.translate import translate
+
+        try:
+            mission = get_mission(req.mission_id)
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+        translated, _explanation = translate(req.natural_language, mission)
+        # NL 翻译结果覆盖 params(玩家明确意图优先)
+        params.update(translated)
+
     try:
-        result = run_forge(req.mission_id, req.params, req.generator, req.seed)
+        result = run_forge(req.mission_id, params, req.generator, req.seed)
     except ValueError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     return _forge_result_to_response(result)

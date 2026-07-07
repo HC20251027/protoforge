@@ -56,6 +56,7 @@ export interface ForgeRequest {
   params: Record<string, number>;
   generator: 'uniform' | 'preference' | 'random';
   seed?: number;
+  natural_language?: string;
 }
 
 export interface ScoreVector {

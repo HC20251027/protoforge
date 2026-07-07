@@ -17,6 +17,10 @@ class ForgeRequest(BaseModel):
     params: dict = Field(default_factory=dict, description="滑块/可调参数")
     generator: Literal["preference", "uniform", "random"] = "preference"
     seed: Optional[int] = None
+    natural_language: Optional[str] = Field(
+        default=None,
+        description="玩家自然语言描述;若提供则服务端先翻译成 params 再 forge",
+    )
 
 
 class ForgeScores(BaseModel):

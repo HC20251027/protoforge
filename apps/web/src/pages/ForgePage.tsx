@@ -48,6 +48,7 @@ export function ForgePage() {
         mission_id: mission.id,
         params,
         generator: 'preference',
+        natural_language: nl.trim() || undefined,
       });
       setResult({
         intron: r.intron,
