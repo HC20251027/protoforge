@@ -66,6 +66,22 @@ class LLMProvider(ABC):
     def test(self, config: ProviderConfig) -> tuple[bool, str]:
         """用最少 token 探测可达性。返回 (ok, message)。"""
 
+    @abstractmethod
+    def chat(
+        self,
+        messages: list[dict],
+        temperature: float = 0.2,
+        max_tokens: int = 256,
+        config: "ProviderConfig | None" = None,
+    ) -> str:
+        """调用 LLM 一次 chat completion,返回 message content(纯文本)。
+
+        参数:
+        - messages: OpenAI 协议格式 [{"role": ..., "content": ...}]
+        - temperature/max_tokens: 采样参数
+        - config: ProviderConfig 实例;若为 None 则从 load_state() 读
+        """
+
 
 # ---------------------------------------------------------------------------
 # Cloud (DeepSeek / OpenAI 兼容)
@@ -108,6 +124,44 @@ class CloudProvider(LLMProvider):
             return True, "云端 API 可达"
         return False, f"HTTP {r.status_code}: {r.text[:200]}"
 
+    def chat(
+        self,
+        messages: list[dict],
+        temperature: float = 0.2,
+        max_tokens: int = 256,
+        config: "ProviderConfig | None" = None,
+    ) -> str:
+        cfg = config or self._default_config()
+        if not cfg.api_key:
+            raise RuntimeError("cloud provider 缺少 api_key,请先在 onboarding 页配置")
+        r = httpx.post(
+            f"{cfg.base_url.rstrip('/')}/chat/completions",
+            headers={
+                "Authorization": f"Bearer {cfg.api_key}",
+                "Content-Type": "application/json",
+            },
+            json={
+                "model": cfg.model,
+                "messages": messages,
+                "temperature": temperature,
+                "max_tokens": max_tokens,
+            },
+            timeout=30.0,
+        )
+        if r.status_code != 200:
+            raise RuntimeError(f"cloud LLM HTTP {r.status_code}: {r.text[:200]}")
+        return r.json()["choices"][0]["message"]["content"]
+
+    @staticmethod
+    def _default_config() -> "ProviderConfig":
+        from app.llm import ProviderConfig
+        return ProviderConfig(
+            name="cloud",
+            base_url="https://api.deepseek.com/v1",
+            model="deepseek-chat",
+            api_key="",
+        )
+
 
 # ---------------------------------------------------------------------------
 # Local (Ollama / LM Studio 兼容 OpenAI 协议)
@@ -142,6 +196,38 @@ class LocalProvider(LLMProvider):
             return True, "本地服务可达"
         return False, f"HTTP {r.status_code}: {r.text[:200]}"
 
+    def chat(
+        self,
+        messages: list[dict],
+        temperature: float = 0.2,
+        max_tokens: int = 256,
+        config: "ProviderConfig | None" = None,
+    ) -> str:
+        from app.llm import ProviderConfig
+        cfg = config or ProviderConfig(
+            name="local",
+            base_url="http://127.0.0.1:11434/v1",
+            model="qwen2.5:7b",
+            api_key="",
+        )
+        r = httpx.post(
+            f"{cfg.base_url.rstrip('/')}/chat/completions",
+            headers={
+                "Authorization": f"Bearer {cfg.api_key or 'ollama'}",
+                "Content-Type": "application/json",
+            },
+            json={
+                "model": cfg.model,
+                "messages": messages,
+                "temperature": temperature,
+                "max_tokens": max_tokens,
+            },
+            timeout=60.0,
+        )
+        if r.status_code != 200:
+            raise RuntimeError(f"local LLM HTTP {r.status_code}: {r.text[:200]}")
+        return r.json()["choices"][0]["message"]["content"]
+
 
 # ---------------------------------------------------------------------------
 # Disabled
@@ -159,6 +245,17 @@ class DisabledProvider(LLMProvider):
 
     def test(self, config: ProviderConfig) -> tuple[bool, str]:
         return True, "disabled 模式不需要探测"
+
+    def chat(
+        self,
+        messages: list[dict],
+        temperature: float = 0.2,
+        max_tokens: int = 256,
+        config: "ProviderConfig | None" = None,
+    ) -> str:
+        raise RuntimeError(
+            "LLM 当前为 disabled 模式,无法 chat。请在 onboarding 页切换到 cloud 或 local。"
+        )
 
 
 _PROVIDERS: dict[ProviderName, LLMProvider] = {
