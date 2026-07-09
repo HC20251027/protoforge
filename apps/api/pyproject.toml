@@ -24,6 +24,15 @@ dev-dependencies = [
     "ruff>=0.6.0",
 ]
 
+# Phase 3 Task 1.2: ML 模型加载器(接口稳定,不强制装 ML 框架)
+[tool.uv.dependency-groups]
+# Phase 1.5/2 接 torch / transformers / biotite 时取消注释
+# models = [
+#     "torch>=2.0.0",
+#     "transformers>=4.40.0",
+#     "safetensors>=0.4.0",
+# ]
+
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"

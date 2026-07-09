@@ -27,6 +27,19 @@ apps/desktop/src-tauri/target/
 .cache/
 models-cache/
 
+# ML 模型权重文件(几百 MB 一个,不进 git;本地下载由 README + sha256 校验)
+# README / sha256 / 目录结构保留在 git,只忽略真实权重
+apps/api/vendor/models/**/*.safetensors
+apps/api/vendor/models/**/*.h5
+apps/api/vendor/models/**/*.hdf5
+apps/api/vendor/models/**/*.pt
+apps/api/vendor/models/**/*.pth
+apps/api/vendor/models/**/*.bin
+apps/api/vendor/models/**/*.ckpt
+apps/api/vendor/models/**/*.onnx
+apps/api/vendor/models/**/*.gguf
+apps/api/vendor/models/**/*.tflite
+
 # 环境配置
 .env
 .env.local
