@@ -2,6 +2,8 @@
 
 Phase 1:不直接 import proto-language(它要 micromamba + 一堆生物模型),用启发式生成
 内含子序列 + 内置评分器即可验证玩法。Phase 1.5 再接真 proto-language。
+
+Phase 3 Task 2:4 档难度由玩家主动选择(ritual.py),与硬件解耦。
 """
 from __future__ import annotations
 import time
@@ -13,7 +15,7 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from .scorer import score_intron
-from .profile import detect_hardware
+from .ritual import RitualSpec, default_ritual, get_ritual
 from app.config import settings
 
 
@@ -22,7 +24,10 @@ class ForgeResult:
     run_id: str
     mission_id: str
     ritual: str
+    ritual_used: str
     duration_ms: int
+    duration_estimate_sec: int
+    badge_unlocked: str | None
     intron: str
     fasta: str
     scores: dict
@@ -120,8 +125,25 @@ def _mcmc_search(
     return best_seq, best_raw
 
 
-def run_forge(mission_id: str, params: dict, generator: str, seed: int | None = None) -> ForgeResult:
-    """端到端跑一次 forge(生成 + 评分 + 仪式名)。"""
+def run_forge(
+    mission_id: str,
+    params: dict,
+    generator: str,
+    seed: int | None = None,
+    ritual: str = "urgent",
+) -> ForgeResult:
+    """端到端跑一次 forge(生成 + 评分 + 仪式名)。
+
+    Args:
+        mission_id: 任务模板 ID
+        params: 可调参数(滑块等)
+        generator: 序列生成模式(uniform / random / preference)
+        seed: 随机种子(可复现)
+        ritual: 锻炉档位(玩家主动选,默认 urgent/急锻)
+
+    Returns:
+        ForgeResult:包含 intron / fasta / 评分 / 仪式名 / 徽章
+    """
     tpl = _load_template(mission_id)
     proto_tpl = tpl["proto_template"]
     weights = proto_tpl["scoring"]["weights"]
@@ -133,8 +155,13 @@ def run_forge(mission_id: str, params: dict, generator: str, seed: int | None = 
                  (proto_tpl["intron_length_range"][1] - proto_tpl["intron_length_range"][0]) * 0.5)
     length = max(80, min(250, length))
 
+    # 玩家主动选的 ritual 决定 MCMC 步数(与硬件解耦,这是"决策密度")
+    spec: RitualSpec = get_ritual(ritual)
+    # 允许 params 覆盖(向后兼容旧的 mcmc_steps 入口),但默认走 spec.calculation_steps
+    mcmc_steps = int(params.get("mcmc_steps", spec.calculation_steps))
+    mcmc_steps = max(1, mcmc_steps)
+
     start = time.perf_counter()
-    mcmc_steps = int(params.get("mcmc_steps", 50))
     if mcmc_steps <= 1:
         intron = _generate_intron(length, generator, seed)
         raw = score_intron(intron, min_target_splice=min_target, max_off_target_splice=max_off)
@@ -162,13 +189,15 @@ def run_forge(mission_id: str, params: dict, generator: str, seed: int | None = 
 
     elapsed = int((time.perf_counter() - start) * 1000)
     fasta = f">protoforge_{mission_id}\n{intron}\n"
-    hw = detect_hardware()
 
     return ForgeResult(
         run_id=f"run_{int(time.time() * 1000)}",
         mission_id=mission_id,
-        ritual=hw.recommended_ritual,
+        ritual=spec.name.value,
+        ritual_used=spec.name.value,
         duration_ms=elapsed,
+        duration_estimate_sec=spec.max_duration_sec,
+        badge_unlocked=spec.badge,
         intron=intron,
         fasta=fasta,
         scores={
@@ -187,5 +216,10 @@ def run_forge(mission_id: str, params: dict, generator: str, seed: int | None = 
     )
 
 
-def run_polar_glow(params: dict, generator: str = "preference", seed: int | None = None) -> ForgeResult:
-    return run_forge("polar-glow-v1", params, generator, seed)
+def run_polar_glow(
+    params: dict,
+    generator: str = "preference",
+    seed: int | None = None,
+    ritual: str = "urgent",
+) -> ForgeResult:
+    return run_forge("polar-glow-v1", params, generator, seed, ritual=ritual)

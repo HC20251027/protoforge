@@ -5,7 +5,7 @@ from typing import Literal, Optional
 
 from pydantic import BaseModel, Field
 
-Ritual = Literal["swift", "standard", "ancient", "crystal"]
+Ritual = Literal["urgent", "standard", "ancient", "crystal"]
 
 
 # ---------------------------------------------------------------------------
@@ -21,6 +21,10 @@ class ForgeRequest(BaseModel):
         default=None,
         description="玩家自然语言描述;若提供则服务端先翻译成 params 再 forge",
     )
+    ritual: Ritual = Field(
+        default="urgent",
+        description="锻炉档位(玩家主动选,与硬件无关):urgent/standard/ancient/crystal",
+    )
 
 
 class ForgeScores(BaseModel):
@@ -33,7 +37,19 @@ class ForgeResponse(BaseModel):
     run_id: str
     mission_id: str
     ritual: Ritual
+    ritual_used: str = Field(
+        ...,
+        description="实际使用的档位枚举值(urgent/standard/ancient/crystal)",
+    )
+    duration_estimate_sec: int = Field(
+        ...,
+        description="该档位的预期耗时上限(秒),前端可据此显示进度",
+    )
     duration_ms: int
+    badge_unlocked: Optional[str] = Field(
+        default=None,
+        description="完成后授予的徽章名(急锻者/主锻匠/古法锻师/晶种培育师)",
+    )
     intron: str
     fasta: str
     scores: ForgeScores

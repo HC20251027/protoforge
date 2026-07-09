@@ -6,7 +6,7 @@ export type LLMProvider = 'cloud' | 'local' | 'disabled';
 
 export type CellLine = 'HEK293' | 'HeLa' | 'Jurkat' | 'PolarYeast' | 'MarsMoss';
 
-export type ForgeRitual = 'swift' | 'standard' | 'ancient' | 'crystal';
+export type ForgeRitual = 'urgent' | 'standard' | 'ancient' | 'crystal';
 
 export type MissionLevel = 'tutorial' | 'delegation' | 'network' | 'tricky' | 'free';
 
@@ -57,6 +57,7 @@ export interface ForgeRequest {
   generator: 'uniform' | 'preference' | 'random';
   seed?: number;
   natural_language?: string;
+  ritual?: ForgeRitual;
 }
 
 export interface ScoreVector {
@@ -75,7 +76,10 @@ export interface ForgeResult {
   run_id: string;
   mission_id: string;
   ritual: ForgeRitual;
+  ritual_used: ForgeRitual;
+  duration_estimate_sec: number;
   duration_ms: number;
+  badge_unlocked?: string | null;
   intron: string;
   fasta: string;
   scores: ScoreVector;

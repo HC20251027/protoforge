@@ -14,14 +14,14 @@ def test_ritual_list_returns_all_levels(client):
     resp = client.get("/api/forge/ritual")
     assert resp.status_code == 200
     rituals = resp.json()
-    assert {r["ritual"] for r in rituals} == {"swift", "standard", "ancient", "crystal"}
+    assert {r["ritual"] for r in rituals} == {"urgent", "standard", "ancient", "crystal"}
 
 
 def test_ritual_recommend_returns_known_value(client):
     resp = client.get("/api/forge/ritual/recommend")
     assert resp.status_code == 200
     body = resp.json()
-    assert body["ritual"] in {"swift", "standard", "ancient", "crystal"}
+    assert body["ritual"] in {"urgent", "standard", "ancient", "crystal"}
 
 
 def test_forge_run_happy_path(client):

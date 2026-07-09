@@ -29,7 +29,7 @@ def test_run_forge_with_generator() -> None:
         seed=42,
     )
     assert result.run_id.startswith("run_")
-    assert result.ritual in ("swift", "standard", "ancient", "crystal")
+    assert result.ritual in ("urgent", "standard", "ancient", "crystal")
     assert result.duration_ms >= 0
 
 
