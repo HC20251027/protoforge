@@ -4,12 +4,15 @@ import type {
   ArtifactListResponse,
   ExitEvaluationRequest,
   ExitEvaluationResponse,
+  ExportListResponse,
   ForgeRequest,
   ForgeResult,
   Mission,
   OnboardingConfig,
   OnboardingProvider,
   OnboardingStatus,
+  QueueListResponse,
+  QueueRetryResponse,
   RiskCheckRequest,
   RiskCheckResponse,
   RitualInfo,
@@ -149,6 +152,25 @@ export const vendorApi = {
 
 export const translateApi = {
   run: (req: TranslateRequest) => request<TranslateResponse>('POST', '/translate', req),
+};
+
+// --- protoforge (Phase 3 Task 5: Steam 创意工坊上传) ---
+
+export const protoforgeApi = {
+  // 上传队列
+  queue: (playerId: string) =>
+    request<QueueListResponse>('GET', `/protoforge/queue?player_id=${encodeURIComponent(playerId)}`),
+  retry: (playerId: string) =>
+    request<QueueRetryResponse>('POST', `/protoforge/queue/retry?player_id=${encodeURIComponent(playerId)}`),
+  cancel: (playerId: string, queueId: string) =>
+    request<{ ok: boolean; queue_id: string }>(
+      'POST',
+      `/protoforge/queue/${encodeURIComponent(queueId)}/cancel`,
+      { player_id: playerId },
+    ),
+  // 导出文件
+  exports: (playerId: string) =>
+    request<ExportListResponse>('GET', `/protoforge/exports?player_id=${encodeURIComponent(playerId)}`),
 };
 
 export type { OnboardingProvider, OnboardingConfig };

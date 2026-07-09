@@ -85,6 +85,58 @@ export interface ForgeResult {
   scores: ScoreVector;
   risk_flags: RiskFlag[];
   passed_gate: boolean;
+  // Phase 3 Task 5:通关后 Steam Workshop 自动上传状态
+  upload?: UploadStatus;
+}
+
+// --- Steam Workshop 上传 (Phase 3 Task 5) ---
+
+export type UploadStatusKind = 'skipped' | 'queued' | 'uploaded' | 'failed';
+
+export interface UploadStatus {
+  queued: boolean;
+  queue_id: string | null;
+  workshop_id: string | null;
+  status: UploadStatusKind;
+  message: string;
+}
+
+export interface QueuedItem {
+  queue_id: string;
+  mission_id: string;
+  ritual: ForgeRitual;
+  status: string;
+  workshop_id: string | null;
+  error: string | null;
+  attempts: number;
+  enqueued_at: string;
+  updated_at: string;
+  export_path: string;
+}
+
+export interface QueueListResponse {
+  items: QueuedItem[];
+  pending_count: number;
+}
+
+export interface QueueRetryResponse {
+  attempted: number;
+  uploaded: number;
+  failed: number;
+  skipped: number;
+}
+
+export interface ExportItem {
+  filename: string;
+  path: string;
+  size_bytes: number;
+  mtime: number;
+  manifest: Record<string, unknown>;
+}
+
+export interface ExportListResponse {
+  items: ExportItem[];
+  total: number;
 }
 
 export interface RitualInfo {

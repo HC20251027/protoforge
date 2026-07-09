@@ -5,3 +5,9 @@
 # 本地 LLM 权重(Qwen2.5-7B GGUF ~4.4GB)不进 git
 # README / sha256 sidecar 仍保留在 git
 vendor/llm/*.gguf
+
+# Phase 3 Task 5:玩家 .protoforge 作品存档 + 上传队列(运行时数据,不进 git)
+# 路径:在 settings.data_dir 下(默认 <project>/.protoforge/data/exports/ 和 /upload_queue/)
+# 测试可改 data_dir 到 tmp_path
+# 整段 .protoforge/ 在根 .gitignore 已 ignore
+exports/

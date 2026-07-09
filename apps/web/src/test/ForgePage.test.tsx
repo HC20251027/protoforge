@@ -40,6 +40,11 @@ const UNFINISHED_LOSE = {
   outcome: 'lose',
 };
 
+// Phase 3 Task 5:Forge 响应里 upload 字段的 mock(每测可覆盖)
+let MOCK_UPLOAD_STATUS: unknown = { queued: false, status: 'skipped' };
+// Phase 3 Task 5:队列端点的 mock 计数
+let MOCK_PENDING_COUNT = 0;
+
 function makeFetchMock(): typeof fetch {
   return vi.fn(async (url: string, init?: RequestInit) => {
     if (url.includes('/api/missions/polar-glow-v1')) {
@@ -67,6 +72,7 @@ function makeFetchMock(): typeof fetch {
           },
           risk_flags: [],
           passed_gate: true,
+          upload: MOCK_UPLOAD_STATUS,
         }),
         { status: 200 },
       );
@@ -74,6 +80,16 @@ function makeFetchMock(): typeof fetch {
     if (url.includes('/api/forge/unfinished')) {
       // Phase 3 Task 3:返回 1 keep + 1 lose(测试两种情况)
       return new Response(JSON.stringify([UNFINISHED_KEEP, UNFINISHED_LOSE]), { status: 200 });
+    }
+    // Phase 3 Task 5:queue 端点
+    if (url.includes('/api/protoforge/queue')) {
+      return new Response(
+        JSON.stringify({
+          items: [],
+          pending_count: MOCK_PENDING_COUNT,
+        }),
+        { status: 200 },
+      );
     }
     return new Response('{}', { status: 200 });
   }) as unknown as typeof fetch;
@@ -84,6 +100,9 @@ beforeEach(() => {
   window.localStorage.clear();
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   delete (globalThis as any).__lastForgeBody;
+  // Phase 3 Task 5:重置 mock
+  MOCK_UPLOAD_STATUS = { queued: false, status: 'skipped' };
+  MOCK_PENDING_COUNT = 0;
   vi.spyOn(global, 'fetch').mockImplementation(makeFetchMock());
 });
 
@@ -361,5 +380,121 @@ describe('ForgePage · unfinished runs list (Phase 3 Task 3)', () => {
     });
     // localStorage 也应更新
     expect(window.localStorage.getItem('protoforge.ritual')).toBe('ancient');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Phase 3 Task 5:通关 toast + 待上传队列计数器
+// ---------------------------------------------------------------------------
+
+describe('ForgePage · upload toast (Phase 3 Task 5)', () => {
+  it('shows success toast when upload.status === "uploaded"', async () => {
+    MOCK_UPLOAD_STATUS = {
+      queued: true,
+      queue_id: 'qu_abc',
+      workshop_id: 'mock_deadbeef',
+      status: 'uploaded',
+      message: '✅ 作品已上传到 Steam 创意工坊 (ID: mock_deadbeef)',
+    };
+    renderForgePage();
+
+    await waitFor(() => {
+      expect(screen.getByTestId('ritual-selector')).toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByTestId('forge-run'));
+
+    // toast 应该出现
+    const toast = await screen.findByTestId('upload-toast', {}, { timeout: 3000 });
+    expect(toast).toBeInTheDocument();
+    expect(toast.getAttribute('data-toast-kind')).toBe('success');
+    expect(toast.textContent).toMatch(/已上传/);
+    expect(toast.textContent).toMatch(/mock_deadbeef/);
+  });
+
+  it('shows info toast when upload.status === "queued"', async () => {
+    MOCK_UPLOAD_STATUS = {
+      queued: true,
+      queue_id: 'qu_xyz',
+      workshop_id: null,
+      status: 'queued',
+      message: '📦 作品已入待上传队列',
+    };
+    renderForgePage();
+
+    await waitFor(() => {
+      expect(screen.getByTestId('ritual-selector')).toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByTestId('forge-run'));
+
+    const toast = await screen.findByTestId('upload-toast');
+    expect(toast).toBeInTheDocument();
+    expect(toast.getAttribute('data-toast-kind')).toBe('info');
+    expect(toast.textContent).toMatch(/已入/);
+  });
+
+  it('does NOT show toast when upload.queued === false (not passed)', async () => {
+    MOCK_UPLOAD_STATUS = { queued: false, status: 'skipped' };
+    renderForgePage();
+
+    await waitFor(() => {
+      expect(screen.getByTestId('ritual-selector')).toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByTestId('forge-run'));
+
+    // 等一会儿 toast 不会出现
+    // 我们的 setTimeout 是 6s,这里用 findByTestId(应该超时 → 抛错,测试就 fail)
+    // 用 queryByTestId 验证不存在
+    // 等待 fetch 完成 + 状态更新
+    await new Promise((r) => setTimeout(r, 200));
+    expect(screen.queryByTestId('upload-toast')).toBeNull();
+  });
+});
+
+describe('ForgePage · upload-queue-counter (Phase 3 Task 5)', () => {
+  it('renders counter with 0 when no pending uploads', async () => {
+    MOCK_PENDING_COUNT = 0;
+    renderForgePage();
+
+    await waitFor(() => {
+      expect(screen.getByTestId('upload-queue-counter')).toBeInTheDocument();
+    });
+
+    const counter = screen.getByTestId('upload-queue-counter');
+    expect(counter.textContent).toMatch(/待上传/);
+    expect(counter.textContent).toMatch(/0/);
+  });
+
+  it('renders counter with N when there are pending uploads', async () => {
+    MOCK_PENDING_COUNT = 3;
+    renderForgePage();
+
+    await waitFor(() => {
+      // counter 出现 + 数字更新
+      const counter = screen.getByTestId('upload-queue-counter');
+      expect(counter).toBeInTheDocument();
+      expect(counter.textContent).toMatch(/3/);
+    });
+  });
+
+  it('clicking counter opens the queue modal', async () => {
+    MOCK_PENDING_COUNT = 2;
+    renderForgePage();
+
+    await waitFor(() => {
+      expect(screen.getByTestId('upload-queue-counter')).toBeInTheDocument();
+    });
+
+    // 模态框初始不存在
+    expect(screen.queryByTestId('upload-queue-modal')).toBeNull();
+
+    // 点击计数器
+    fireEvent.click(screen.getByTestId('upload-queue-counter'));
+
+    // 模态框出现
+    const modal = await screen.findByTestId('upload-queue-modal');
+    expect(modal).toBeInTheDocument();
   });
 });

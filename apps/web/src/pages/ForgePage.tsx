@@ -1,17 +1,25 @@
 import { useEffect, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import { forgeApi, missionApi, translateApi } from '../lib/api';
+import { forgeApi, missionApi, protoforgeApi, translateApi } from '../lib/api';
 import { SliderCard } from '../components/SliderCard';
 import { ForgeAnimation } from '../components/ForgeAnimation';
 import { ScoreRadar } from '../components/ScoreRadar';
 import { SequenceView } from '../components/SequenceView';
-import { Mission, SliderParam, UnfinishedRun } from '@protoforge/shared';
+import {
+  Mission,
+  SliderParam,
+  UnfinishedRun,
+  UploadStatus,
+} from '@protoforge/shared';
 
 // ---------------------------------------------------------------------------
 // 4 档仪式定义(Phase 3 Task 2)
 // 不与硬件挂钩 — 玩家在 Settings / 锻炉按钮上方主动选难度。
 // 选中后存到 localStorage('protoforge.ritual'),下次启动默认走最后一档。
 // ---------------------------------------------------------------------------
+
+// 本地玩家 ID(Phase 5 接 user system 时换成 auth.uid)
+const PLAYER_ID = 'default';
 
 export type RitualKey = 'urgent' | 'standard' | 'ancient' | 'crystal';
 
@@ -77,10 +85,17 @@ export function ForgePage() {
     ritual: string;
     duration_ms: number;
     badge_unlocked?: string | null;
+    upload?: UploadStatus;
   } | null>(null);
   const [err, setErr] = useState<string | null>(null);
   // Phase 3 Task 3:上次未完成的 run 列表
   const [unfinished, setUnfinished] = useState<UnfinishedRun[]>([]);
+  // Phase 3 Task 5:通关 toast
+  const [toast, setToast] = useState<{ kind: 'success' | 'info' | 'warn'; text: string } | null>(null);
+  // Phase 3 Task 5:待上传队列数
+  const [pendingCount, setPendingCount] = useState(0);
+  // 弹窗:显示队列详情
+  const [showQueue, setShowQueue] = useState(false);
 
   useEffect(() => {
     missionApi
@@ -105,6 +120,17 @@ export function ForgePage() {
         // 后端 0 列表 / 失败 → 不阻塞 UI
         setUnfinished([]);
       });
+  }, []);
+
+  // Phase 3 Task 5:启动时加载"待上传队列"数量(给右上角计数器用)
+  const refreshPendingCount = () => {
+    protoforgeApi
+      .queue(PLAYER_ID)
+      .then((r) => setPendingCount(r.pending_count))
+      .catch(() => setPendingCount(0));
+  };
+  useEffect(() => {
+    refreshPendingCount();
   }, []);
 
   const handleRestartUnfinished = (r: UnfinishedRun) => {
@@ -144,7 +170,24 @@ export function ForgePage() {
         ritual: r.ritual,
         duration_ms: r.duration_ms,
         badge_unlocked: r.badge_unlocked,
+        upload: r.upload,
       });
+
+      // Phase 3 Task 5:通关后 toast(按 upload.status 决定文案)
+      const upload = r.upload;
+      if (upload && upload.queued) {
+        if (upload.status === 'uploaded') {
+          setToast({ kind: 'success', text: upload.message || '✅ 已上传' });
+        } else if (upload.status === 'queued') {
+          setToast({ kind: 'info', text: upload.message || '📦 已入队' });
+        } else if (upload.status === 'failed') {
+          setToast({ kind: 'warn', text: upload.message || '⚠️ 上传失败' });
+        }
+        // 刷新队列计数器
+        refreshPendingCount();
+        // 6 秒后自动消失
+        setTimeout(() => setToast(null), 6000);
+      }
     } catch (e) {
       setErr((e as Error).message);
     } finally {
@@ -175,9 +218,91 @@ export function ForgePage() {
   return (
     <div className="space-y-4" data-testid="forge-page">
       <header>
-        <h1 className="text-2xl font-bold text-slate-900">{mission.title}</h1>
-        <p className="text-sm text-slate-600">{mission.description}</p>
+        <div className="flex items-center justify-between">
+          <div>
+            <h1 className="text-2xl font-bold text-slate-900">{mission.title}</h1>
+            <p className="text-sm text-slate-600">{mission.description}</p>
+          </div>
+          {/* Phase 3 Task 5:待上传队列计数器(右上角,点击展开弹窗) */}
+          <button
+            type="button"
+            data-testid="upload-queue-counter"
+            onClick={() => {
+              refreshPendingCount();
+              setShowQueue(true);
+            }}
+            className={
+              'rounded-full px-3 py-1 text-xs font-semibold transition-colors ' +
+              (pendingCount > 0
+                ? 'bg-amber-100 text-amber-800 hover:bg-amber-200'
+                : 'bg-slate-100 text-slate-500 hover:bg-slate-200')
+            }
+            title="点击查看待上传作品"
+          >
+            📦 待上传: {pendingCount}
+          </button>
+        </div>
       </header>
+
+      {/* Phase 3 Task 5:通关后 toast(浮动显示 6 秒) */}
+      {toast ? (
+        <div
+          data-testid="upload-toast"
+          data-toast-kind={toast.kind}
+          role="status"
+          className={
+            'fixed right-6 top-20 z-50 max-w-sm rounded-lg border px-4 py-3 text-sm shadow-lg ' +
+            (toast.kind === 'success'
+              ? 'border-emerald-300 bg-emerald-50 text-emerald-800'
+              : toast.kind === 'warn'
+                ? 'border-rose-300 bg-rose-50 text-rose-800'
+                : 'border-sky-300 bg-sky-50 text-sky-800')
+          }
+        >
+          {toast.text}
+        </div>
+      ) : null}
+
+      {/* Phase 3 Task 5:待上传队列弹窗(简易版,Phase 5 接 user system 时换 /exports 完整页) */}
+      {showQueue ? (
+        <div
+          data-testid="upload-queue-modal"
+          className="fixed inset-0 z-40 flex items-center justify-center bg-black/30"
+          onClick={() => setShowQueue(false)}
+        >
+          <div
+            className="max-h-[80vh] w-full max-w-md overflow-y-auto rounded-lg bg-white p-6 shadow-xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="mb-3 flex items-center justify-between">
+              <h2 className="text-lg font-semibold text-slate-900">待上传队列 ({pendingCount})</h2>
+              <button
+                type="button"
+                onClick={() => setShowQueue(false)}
+                className="text-slate-500 hover:text-slate-700"
+                aria-label="关闭"
+              >
+                ✕
+              </button>
+            </div>
+            {pendingCount === 0 ? (
+              <p className="text-sm text-slate-500">暂无待上传作品</p>
+            ) : (
+              <button
+                type="button"
+                data-testid="upload-queue-retry"
+                onClick={async () => {
+                  await protoforgeApi.retry(PLAYER_ID);
+                  refreshPendingCount();
+                }}
+                className="w-full rounded bg-forge-500 px-3 py-2 text-sm font-semibold text-white hover:bg-forge-600"
+              >
+                立即重试所有待上传
+              </button>
+            )}
+          </div>
+        </div>
+      ) : null}
 
       {/* Phase 3 Task 3:开炉时(loading=true)顶部红色横幅 — 固定文案,无百分比 */}
       {loading ? (

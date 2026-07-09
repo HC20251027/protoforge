@@ -55,6 +55,40 @@ class ForgeResponse(BaseModel):
     scores: ForgeScores
     risk_flags: list[dict] = Field(default_factory=list)
     passed_gate: bool
+    # Phase 3 Task 5:通关后 Steam Workshop 自动上传状态
+    # - queued=False, status="skipped":未通关(不触发上传)
+    # - queued=True,  status="uploaded", workshop_id != None:实时上传成功
+    # - queued=True,  status="queued",   workshop_id == None:入队待重试(Steam 未运行/网络断)
+    # - queued=True,  status="failed",   workshop_id == None:尝试上传失败(会重试)
+    upload: "UploadStatus" = Field(
+        default_factory=lambda: UploadStatus(),
+        description="通关后 Steam Workshop 上传状态",
+    )
+
+
+class UploadStatus(BaseModel):
+    """通关后 Steam Workshop 上传结果(Phase 3 Task 5)。"""
+
+    queued: bool = Field(
+        ...,
+        description="是否触发了上传流程(通关 + 评分达标 → True)",
+    )
+    queue_id: Optional[str] = Field(
+        default=None,
+        description="上传队列 ID(后续 retry/cancel 用)",
+    )
+    workshop_id: Optional[str] = Field(
+        default=None,
+        description="Steam Workshop item ID(mock 模式下形如 mock_xxx)",
+    )
+    status: Literal["skipped", "queued", "uploaded", "failed"] = Field(
+        default="skipped",
+        description="上传状态:skipped(未通关)/queued(入队)/uploaded(已上传)/failed(失败,会重试)",
+    )
+    message: str = Field(
+        default="",
+        description="给前端的提示消息(通关时显示在 toast)",
+    )
 
 
 class RitualInfo(BaseModel):
@@ -266,3 +300,66 @@ class TranslateResponse(BaseModel):
     values: dict
     explanation: str
     provider: str
+
+
+# ---------------------------------------------------------------------------
+# Phase 3 Task 5: Steam 创意工坊自动上传 — 队列 / 导出
+# ---------------------------------------------------------------------------
+
+class QueuedItemSchema(BaseModel):
+    """单条上传队列项(给前端展示用)。"""
+
+    queue_id: str
+    mission_id: str
+    ritual: str
+    status: str
+    workshop_id: Optional[str] = None
+    error: Optional[str] = None
+    attempts: int = 0
+    enqueued_at: str
+    updated_at: str
+    export_path: str
+
+
+class QueueListResponse(BaseModel):
+    """GET /api/protoforge/queue 返回结构。"""
+
+    items: list[QueuedItemSchema]
+    pending_count: int
+
+
+class QueueRetryResponse(BaseModel):
+    """POST /api/protoforge/queue/retry 返回结构。"""
+
+    attempted: int
+    uploaded: int
+    failed: int
+    skipped: int
+
+
+class ExportItemSchema(BaseModel):
+    """GET /api/protoforge/exports 单条导出文件。"""
+
+    filename: str
+    path: str
+    size_bytes: int
+    mtime: float
+    manifest: dict
+
+
+class ExportListResponse(BaseModel):
+    """GET /api/protoforge/exports 返回结构。"""
+
+    items: list[ExportItemSchema]
+    total: int
+
+
+class QueueCancelRequest(BaseModel):
+    """POST /api/protoforge/queue/{queue_id}/cancel 请求体(可空)。"""
+
+    player_id: str = Field(..., description="玩家 ID(必填)")
+
+
+class QueueCancelResponse(BaseModel):
+    ok: bool
+    queue_id: str
