@@ -55,6 +55,13 @@ class ForgeResponse(BaseModel):
     scores: ForgeScores
     risk_flags: list[dict] = Field(default_factory=list)
     passed_gate: bool
+    # Phase 3 Task 6 P0-A2:运行过程中的错误信息。
+    # 默认空 list = 成功;非空 = 计算过程中出错,result 内容可能不准确。
+    # HTTP 仍 200(玩家能继续),但前端要显示红色横幅"⚠️ 计算异常"。
+    errors: list[str] = Field(
+        default_factory=list,
+        description="运行错误信息(空 = 成功);前端根据是否非空决定 UI 提示。",
+    )
     # Phase 3 Task 5:通关后 Steam Workshop 自动上传状态
     # - queued=False, status="skipped":未通关(不触发上传)
     # - queued=True,  status="uploaded", workshop_id != None:实时上传成功

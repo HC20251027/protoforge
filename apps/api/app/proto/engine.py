@@ -6,6 +6,12 @@ Phase 1:不直接 import proto-language(它要 micromamba + 一堆生物模型),
 Phase 3 Task 2:4 档难度由玩家主动选择(ritual.py),与硬件解耦。
 Phase 3 Task 3:退出惩罚 — run_forge 通过 RitualStateStore 写进度,
 应用启动时 recover_unfinished_runs() 处理上次未完成的。
+
+Phase 3 Task 6 P0-A2:显式失败 — 之前 MCMC step 抛错时,内层 except
+会"静默退化"成默认分(score=0),玩家分不清"算法没找到好序列"和
+"算法崩了"。修复:内层错误包成 `ForgeExecutionError`,顶层 catch 后
+把错误消息塞进 `result.errors: list[str]`,HTTP 仍 200 返回(让玩家
+能继续),前端用 errors 是否非空决定要不要显示"⚠️ 计算异常"横幅。
 """
 from __future__ import annotations
 import time
@@ -26,6 +32,11 @@ from .ritual_state import (
 from app.config import settings
 
 
+class ForgeExecutionError(RuntimeError):
+    """Phase 3 Task 6 P0-A2:`run_forge` 内部任何异常都包成这个,顶层 catch
+    后写入 `result.errors` — 显式失败,不静默退化。"""
+
+
 @dataclass
 class ForgeResult:
     run_id: str
@@ -40,6 +51,8 @@ class ForgeResult:
     scores: dict
     risk_flags: list = field(default_factory=list)
     passed_gate: bool = False
+    # Phase 3 Task 6 P0-A2:运行过程中产生的错误信息(默认空 = 成功)
+    errors: list[str] = field(default_factory=list)
 
 
 _TEMPLATES_DIR = Path(__file__).parent / "templates"
@@ -202,14 +215,39 @@ def run_forge(
         except Exception:  # noqa: BLE001
             pass
 
+    # Phase 3 Task 6 P0-A2:收集错误用(顶层 handler 把 ForgeExecutionError
+    # 写回 result.errors,不让 MCMC 异常静默退化成 score=0)
+    collected_errors: list[str] = []
+
     start = time.perf_counter()
-    if mcmc_steps <= 1:
-        intron = _generate_intron(length, generator, seed)
-        raw = score_intron(intron, min_target_splice=min_target, max_off_target_splice=max_off)
-        # mcmc_steps=1 路径也标记当前 step
-        _on_progress(mcmc_steps)
-    else:
-        intron, raw = _mcmc_search(length, generator, seed, mcmc_steps, params, on_progress=_on_progress)
+    try:
+        if mcmc_steps <= 1:
+            intron = _generate_intron(length, generator, seed)
+            raw = score_intron(intron, min_target_splice=min_target, max_off_target_splice=max_off)
+            # mcmc_steps=1 路径也标记当前 step
+            _on_progress(mcmc_steps)
+        else:
+            intron, raw = _mcmc_search(length, generator, seed, mcmc_steps, params, on_progress=_on_progress)
+    except Exception as exc:  # noqa: BLE001
+        # P0-A2 修复:不再静默退化成 score=0。把错误记到 result.errors,
+        # 并生成一个**最小可用**的 intron(空序列 + 默认 raw),让玩家
+        # UI 仍能继续(但 result.passed_gate=False 且 errors 非空)。
+        error_msg = f"{type(exc).__name__}: {exc}"
+        collected_errors.append(f"MCMC 搜索失败 ({error_msg})")
+        intron = ""
+        raw = {
+            "splice_site_score": 0.0,
+            "orthogonality": 0.0,
+            "gc_penalty": 0.0,
+            "length_norm": 0.0,
+            "kmer_entropy": 0.0,
+            "passes_thresholds": False,
+        }
+        # 标完进度,让 RitualStateStore 知道这次 run 结束了
+        try:
+            _on_progress(mcmc_steps)
+        except Exception:  # noqa: BLE001
+            pass
 
     primary = max(
         0.0,
@@ -233,6 +271,7 @@ def run_forge(
     elapsed = int((time.perf_counter() - start) * 1000)
     fasta = f">protoforge_{mission_id}\n{intron}\n"
 
+    # P0-A2:即使 MCMC 失败,passed_gate 也必须 = False(因为 raw 是默认 0 分)
     result = ForgeResult(
         run_id=run_id,
         mission_id=mission_id,
@@ -256,6 +295,7 @@ def run_forge(
         },
         risk_flags=risk_flags,
         passed_gate=raw["passes_thresholds"],
+        errors=collected_errors,
     )
 
     # Phase 3 Task 3:标完成 + 存 result(让 KEEP_RESULT 路径生效)
@@ -283,6 +323,7 @@ def _result_to_json(result: ForgeResult) -> dict:
         "scores": result.scores,
         "risk_flags": result.risk_flags,
         "passed_gate": result.passed_gate,
+        "errors": result.errors,
     }
 
 

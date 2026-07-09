@@ -100,6 +100,8 @@ def _forge_result_to_response(result, upload: UploadStatus) -> ForgeResponse:
         scores=result.scores,
         risk_flags=result.risk_flags,
         passed_gate=result.passed_gate,
+        # Phase 3 Task 6 P0-A2:把引擎层 errors 透传给前端
+        errors=result.errors,
         upload=upload,
     )
 
