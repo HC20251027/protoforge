@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import { forgeApi, missionApi, protoforgeApi, translateApi } from '../lib/api';
+import { forgeApi, galleryApi, missionApi, protoforgeApi, translateApi } from '../lib/api';
 import { SliderCard } from '../components/SliderCard';
 import { ForgeAnimation } from '../components/ForgeAnimation';
 import { ScoreRadar } from '../components/ScoreRadar';
@@ -86,6 +86,8 @@ export function ForgePage() {
     duration_ms: number;
     badge_unlocked?: string | null;
     upload?: UploadStatus;
+    // Phase 3 Task 6 P0-A2:运行错误信息(空 = 成功,非空 = 触发红色横幅)
+    errors?: string[];
   } | null>(null);
   const [err, setErr] = useState<string | null>(null);
   // Phase 3 Task 3:上次未完成的 run 列表
@@ -171,7 +173,33 @@ export function ForgePage() {
         duration_ms: r.duration_ms,
         badge_unlocked: r.badge_unlocked,
         upload: r.upload,
+        // Phase 3 Task 6 P0-A2:把 errors 存到 result state,触发红色横幅
+        errors: r.errors,
       });
+
+      // Phase 3 Task 6 P0-B1:通关后自动写入 Gallery(核心循环最后一环)
+      // 旧实现漏掉这一步,导致玩家"锻完了"却看不到作品。
+      try {
+        await galleryApi.create({
+          mission_id: r.mission_id,
+          title: `${mission.title} · ${r.ritual} · run ${r.run_id.slice(-6)}`,
+          intron: r.intron,
+          fasta: r.fasta,
+          scores: r.scores,
+          ritual: r.ritual,
+          notes: null,
+          risk_passed: r.passed_gate,
+        });
+        setToast({ kind: 'success', text: '✅ 作品已保存到 Gallery' });
+        setTimeout(() => setToast(null), 6000);
+      } catch (saveErr) {
+        // 自动保存失败 → 不阻塞 forge 流程,但要明确告诉玩家
+        setToast({
+          kind: 'warn',
+          text: `⚠️ 作品保存到 Gallery 失败: ${(saveErr as Error).message}`,
+        });
+        setTimeout(() => setToast(null), 8000);
+      }
 
       // Phase 3 Task 5:通关后 toast(按 upload.status 决定文案)
       const upload = r.upload;
@@ -194,6 +222,11 @@ export function ForgePage() {
       setLoading(false);
     }
   };
+
+  // Phase 3 Task 6 P0-A2:result.errors 非空 → 显示红色横幅"计算异常"。
+  // 注:HTTP 仍 200(玩家能继续 forge),但引擎层抛错被记录了,
+  // 让玩家分得清"算法没找到好序列"和"算法崩了"。
+  const hasErrors = (result as { errors?: string[] } | null)?.errors && (result as { errors?: string[] }).errors!.length > 0;
 
   const handleTranslate = async () => {
     if (!mission || !nl.trim()) return;
@@ -487,6 +520,24 @@ export function ForgePage() {
           />
         ) : null}
       </section>
+
+      {/* Phase 3 Task 6 P0-A2:result.errors 非空 → 红色横幅"计算异常" */}
+      {hasErrors ? (
+        <section
+          data-testid="forge-error-banner"
+          role="alert"
+          className="rounded border-2 border-rose-500 bg-rose-50 px-3 py-2 text-sm text-rose-800"
+        >
+          <strong>⚠️ 计算过程中出现错误,结果可能不准确</strong>
+          <ul className="mt-1 list-disc pl-5 text-xs">
+            {((result as { errors: string[] }).errors).map((msg, i) => (
+              <li key={i} data-testid="forge-error-item">
+                {msg}
+              </li>
+            ))}
+          </ul>
+        </section>
+      ) : null}
 
       {result ? <SequenceView fasta={result.fasta} intron={result.intron} /> : null}
     </div>

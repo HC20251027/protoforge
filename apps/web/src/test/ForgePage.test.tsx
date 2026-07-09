@@ -44,6 +44,12 @@ const UNFINISHED_LOSE = {
 let MOCK_UPLOAD_STATUS: unknown = { queued: false, status: 'skipped' };
 // Phase 3 Task 5:队列端点的 mock 计数
 let MOCK_PENDING_COUNT = 0;
+// Phase 3 Task 6 P0-B1:galleryApi.create 的 mock 行为(默认成功,可每测覆盖)
+let MOCK_GALLERY_CREATE_FAIL: Error | null = null;
+// Phase 3 Task 6 P0-B1:追踪 galleryApi.create 调用次数
+let MOCK_GALLERY_CREATE_CALLS = 0;
+// Phase 3 Task 6 P0-A2:Forge 响应里 errors 字段 mock(默认空,模拟计算成功)
+let MOCK_FORGE_ERRORS: string[] = [];
 
 function makeFetchMock(): typeof fetch {
   return vi.fn(async (url: string, init?: RequestInit) => {
@@ -73,6 +79,8 @@ function makeFetchMock(): typeof fetch {
           risk_flags: [],
           passed_gate: true,
           upload: MOCK_UPLOAD_STATUS,
+          // Phase 3 Task 6 P0-A2:errors 字段,默认空(成功)
+          errors: MOCK_FORGE_ERRORS,
         }),
         { status: 200 },
       );
@@ -91,6 +99,34 @@ function makeFetchMock(): typeof fetch {
         { status: 200 },
       );
     }
+    // Phase 3 Task 6 P0-B1:gallery create 端点
+    if (url.includes('/api/gallery') && init?.method === 'POST') {
+      MOCK_GALLERY_CREATE_CALLS += 1;
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      (globalThis as any).__lastGalleryCreateBody = init?.body
+        ? JSON.parse(String(init.body))
+        : null;
+      if (MOCK_GALLERY_CREATE_FAIL) {
+        return new Response(JSON.stringify({ detail: MOCK_GALLERY_CREATE_FAIL.message }), {
+          status: 500,
+        });
+      }
+      return new Response(
+        JSON.stringify({
+          id: `art_test_${MOCK_GALLERY_CREATE_CALLS}`,
+          mission_id: 'polar-glow-v1',
+          title: 'mocked',
+          intron: 'GTATGCATGCAG',
+          fasta: '>protoforge\nGTATGCATGCAG\n',
+          scores: { primary: 0.5, components: {}, weights: {} },
+          ritual: 'urgent',
+          notes: null,
+          risk_passed: true,
+          created_at: '2026-07-09T00:00:00Z',
+        }),
+        { status: 200 },
+      );
+    }
     return new Response('{}', { status: 200 });
   }) as unknown as typeof fetch;
 }
@@ -103,6 +139,13 @@ beforeEach(() => {
   // Phase 3 Task 5:重置 mock
   MOCK_UPLOAD_STATUS = { queued: false, status: 'skipped' };
   MOCK_PENDING_COUNT = 0;
+  // Phase 3 Task 6 P0-B1:重置 gallery mock
+  MOCK_GALLERY_CREATE_FAIL = null;
+  MOCK_GALLERY_CREATE_CALLS = 0;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  delete (globalThis as any).__lastGalleryCreateBody;
+  // Phase 3 Task 6 P0-A2:重置 errors mock
+  MOCK_FORGE_ERRORS = [];
   vi.spyOn(global, 'fetch').mockImplementation(makeFetchMock());
 });
 
@@ -434,7 +477,7 @@ describe('ForgePage · upload toast (Phase 3 Task 5)', () => {
     expect(toast.textContent).toMatch(/已入/);
   });
 
-  it('does NOT show toast when upload.queued === false (not passed)', async () => {
+  it('does NOT show upload toast when upload.queued === false (not passed)', async () => {
     MOCK_UPLOAD_STATUS = { queued: false, status: 'skipped' };
     renderForgePage();
 
@@ -444,12 +487,16 @@ describe('ForgePage · upload toast (Phase 3 Task 5)', () => {
 
     fireEvent.click(screen.getByTestId('forge-run'));
 
-    // 等一会儿 toast 不会出现
-    // 我们的 setTimeout 是 6s,这里用 findByTestId(应该超时 → 抛错,测试就 fail)
-    // 用 queryByTestId 验证不存在
-    // 等待 fetch 完成 + 状态更新
+    // 等一会儿 — B1 会先弹"已保存到 Gallery"toast,所以
+    // 我们这里测**非 gallery** 上传 toast(只要 data-toast-kind
+    // 不是 "info" queued 文案就 OK;实际只要不是"uploaded"/"queued"
+    // 那种 Steam 文案就行 — gallery 是 success kind + 中文)
     await new Promise((r) => setTimeout(r, 200));
-    expect(screen.queryByTestId('upload-toast')).toBeNull();
+    const toast = screen.queryByTestId('upload-toast');
+    if (toast) {
+      // 不应出现 Steam upload 队列/上传成功/上传失败文案
+      expect(toast.textContent).not.toMatch(/入队|已上传到 Steam|上传失败/);
+    }
   });
 });
 
@@ -496,5 +543,144 @@ describe('ForgePage · upload-queue-counter (Phase 3 Task 5)', () => {
     // 模态框出现
     const modal = await screen.findByTestId('upload-queue-modal');
     expect(modal).toBeInTheDocument();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Phase 3 Task 6 P0-B1:通关后自动写入 Gallery(核心循环最后一环)
+// ---------------------------------------------------------------------------
+
+describe('ForgePage · auto-save to Gallery (Phase 3 Task 6 P0-B1)', () => {
+  it('calls galleryApi.create after a successful forge', async () => {
+    renderForgePage();
+
+    await waitFor(() => {
+      expect(screen.getByTestId('ritual-selector')).toBeInTheDocument();
+    });
+
+    // 触发一次锻造
+    fireEvent.click(screen.getByTestId('forge-run'));
+
+    // 等到 galleryApi.create 被调用
+    await waitFor(() => {
+      expect(MOCK_GALLERY_CREATE_CALLS).toBeGreaterThanOrEqual(1);
+    });
+
+    // 校验 body 字段
+    const body = (globalThis as { __lastGalleryCreateBody?: { mission_id: string; title: string; ritual: string; intron: string; fasta: string; risk_passed: boolean } })
+      .__lastGalleryCreateBody;
+    expect(body).toBeTruthy();
+    expect(body.mission_id).toBe('polar-glow-v1');
+    expect(body.intron).toBe('GTATGCATGCAG');
+    expect(body.fasta).toBe('>protoforge\nGTATGCATGCAG\n');
+    expect(body.ritual).toBeTruthy();
+    expect(body.risk_passed).toBe(true);
+  });
+
+  it('shows "✅ 作品已保存到 Gallery" success toast after forge', async () => {
+    renderForgePage();
+
+    await waitFor(() => {
+      expect(screen.getByTestId('ritual-selector')).toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByTestId('forge-run'));
+
+    // toast 出现,文案含"已保存到 Gallery"
+    const toast = await screen.findByTestId('upload-toast', {}, { timeout: 3000 });
+    expect(toast).toBeInTheDocument();
+    expect(toast.getAttribute('data-toast-kind')).toBe('success');
+    expect(toast.textContent).toMatch(/作品已保存到 Gallery/);
+  });
+
+  it('shows warning toast (and does not crash) when galleryApi.create fails', async () => {
+    MOCK_GALLERY_CREATE_FAIL = new Error('disk full');
+    renderForgePage();
+
+    await waitFor(() => {
+      expect(screen.getByTestId('ritual-selector')).toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByTestId('forge-run'));
+
+    // 失败 toast 仍要出现
+    const toast = await screen.findByTestId('upload-toast', {}, { timeout: 3000 });
+    expect(toast).toBeInTheDocument();
+    expect(toast.getAttribute('data-toast-kind')).toBe('warn');
+    expect(toast.textContent).toMatch(/作品保存到 Gallery 失败/);
+    expect(toast.textContent).toMatch(/disk full/);
+    // forge 结果应仍然显示(失败不阻塞 UI)
+    expect(screen.getByTestId('forge-run')).toBeInTheDocument();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Phase 3 Task 6 P0-A2:errors 字段 → 红色"计算异常"横幅
+// ---------------------------------------------------------------------------
+
+describe('ForgePage · error banner (Phase 3 Task 6 P0-A2)', () => {
+  it('does NOT show error banner on a successful forge (errors empty)', async () => {
+    MOCK_FORGE_ERRORS = []; // 模拟成功
+    renderForgePage();
+
+    await waitFor(() => {
+      expect(screen.getByTestId('ritual-selector')).toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByTestId('forge-run'));
+
+    // 等 forge 完成
+    await waitFor(() => {
+      expect(MOCK_GALLERY_CREATE_CALLS).toBeGreaterThanOrEqual(1);
+    });
+
+    // 错误横幅不应出现
+    expect(screen.queryByTestId('forge-error-banner')).toBeNull();
+  });
+
+  it('shows red "计算过程中出现错误" banner when errors are non-empty', async () => {
+    MOCK_FORGE_ERRORS = [
+      'MCMC 搜索失败 (RuntimeError: chain diverged at step 7)',
+    ];
+    renderForgePage();
+
+    await waitFor(() => {
+      expect(screen.getByTestId('ritual-selector')).toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByTestId('forge-run'));
+
+    // 红色横幅出现
+    const banner = await screen.findByTestId('forge-error-banner', {}, { timeout: 3000 });
+    expect(banner).toBeInTheDocument();
+    expect(banner.getAttribute('role')).toBe('alert');
+    expect(banner.textContent).toMatch(/计算过程中出现错误/);
+    expect(banner.textContent).toMatch(/结果可能不准确/);
+    // 错误列表项也出现
+    const item = screen.getByTestId('forge-error-item');
+    expect(item).toBeInTheDocument();
+    expect(item.textContent).toMatch(/chain diverged at step 7/);
+  });
+
+  it('shows multiple error items when there are multiple errors', async () => {
+    MOCK_FORGE_ERRORS = [
+      'MCMC 搜索失败 (RuntimeError: error A)',
+      'PWM 评分失败 (ValueError: bad motif)',
+    ];
+    renderForgePage();
+
+    await waitFor(() => {
+      expect(screen.getByTestId('ritual-selector')).toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByTestId('forge-run'));
+
+    const banner = await screen.findByTestId('forge-error-banner');
+    expect(banner).toBeInTheDocument();
+    // 2 个 li
+    const items = screen.getAllByTestId('forge-error-item');
+    expect(items).toHaveLength(2);
+    expect(items[0].textContent).toMatch(/error A/);
+    expect(items[1].textContent).toMatch(/bad motif/);
   });
 });
