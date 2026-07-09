@@ -155,10 +155,15 @@ pub const SIDECAR_BIN_NAME: &str = "python";
 
 /// 启动 sidecar 时传给 Python 的 API 端口。
 ///
-/// 注意:ProtoForge 后端默认端口是 7654(见 ``apps/api/app/config.py``),
-/// desktop sidecar 历史约定是 7655(避免和开发期 API 进程冲突);
-/// 本函数按 sidecar.rs 既有行为使用 7655,但允许调用方通过
-/// ``PROTOFORGE_SIDECAR_PORT`` 覆盖。
+/// Phase 3 Task 6 P0-C1:历史上 sidecar 默认 7655(避免 dev 期 API 进程冲突),
+/// 但**生产**场景里后端配置 (`apps/api/app/config.py`) 默认端口是 7654。
+/// 两边不一致 → Tauri 启动 Python 后,WebView 调 `fetch('/api/...')` 的
+/// 转发目标会指错端口(取决于 Vite dev proxy / Tauri shell 哪个配错)。
+///
+/// 修复:让 sidecar 启动端口**优先**从 `PROTOFORGE_API_PORT` 读
+/// (跟后端 `Settings.port` 的 env prefix `PROTOFORGE_` 对齐),然后
+/// 才回退到 `PROTOFORGE_SIDECAR_PORT` 兼容历史 dev 配置,最后兜底
+/// `SIDECAR_API_PORT_DEFAULT = 7655`。
 pub const SIDECAR_API_PORT_DEFAULT: u16 = 7655;
 
 /// 计算 sidecar 解释器在当前 platform 上的**磁盘路径**(用于调试 /
@@ -190,13 +195,27 @@ pub fn sidecar_runtime_path() -> String {
     format!("<game-dir>/{}", sidecar_binary_path())
 }
 
-/// 解析 sidecar 实际监听端口(``PROTOFORGE_SIDECAR_PORT`` 可覆盖)。
+/// 解析 sidecar 实际监听端口。
+///
+/// **Phase 3 Task 6 P0-C1**:优先读 `PROTOFORGE_API_PORT`(对齐
+/// 后端 `Settings.port` 的 env prefix),再读 `PROTOFORGE_SIDECAR_PORT`
+/// 兼容历史 dev 配置,最后兜底 7655。这样 Tauri 启动 Python 时
+/// 用的端口永远 = 后端读到的端口,不会因为 sidecar 默认 7655 而
+/// 撞上"打包后连不上后端"的问题。
 pub fn sidecar_port() -> u16 {
+    // 1) 优先 PROTOFORGE_API_PORT — 跟后端 Settings 的 env prefix 对齐
+    if let Ok(p) = std::env::var("PROTOFORGE_API_PORT") {
+        if let Ok(parsed) = p.parse::<u16>() {
+            return parsed;
+        }
+    }
+    // 2) 回退 PROTOFORGE_SIDECAR_PORT — 历史 dev 习惯
     if let Ok(p) = std::env::var("PROTOFORGE_SIDECAR_PORT") {
         if let Ok(parsed) = p.parse::<u16>() {
             return parsed;
         }
     }
+    // 3) 兜底默认
     SIDECAR_API_PORT_DEFAULT
 }
 
@@ -252,6 +271,10 @@ pub fn launch_python_sidecar(
             "--host",
             host.as_str(),
         ])
+        // Phase 3 Task 6 P0-C1:把解析出来的端口作为 PROTOFORGE_API_PORT
+        // 注入 sidecar 环境,这样后端 uvicorn 如果读了它(比如新加的兜底
+        // 启动脚本),就能保证 listen 在同一个端口上,跟 Tauri 的转发目标对齐。
+        .env("PROTOFORGE_API_PORT", port.as_str())
         .current_dir(sidecar_cwd())
         .spawn()
         .map_err(|e| {
@@ -302,4 +325,81 @@ fn sidecar_cwd() -> std::path::PathBuf {
     }
 
     std::path::PathBuf::from(".")
+}
+
+// =====================================================================
+// Phase 3 Task 6 P0-C1:端口解析单元测试
+// ---------------------------------------------------------------------
+// 不在本次任务里跑 `cargo test`(没有 Tauri 编译时间预算),但代码里
+// 给出 `#[cfg(test)]` 单测,后续 desktop CI 跑 cargo test 即可验证。
+// Python 端另有 test_p0_c1_port_alignment.py 验证"后端配置端口
+// = sidecar 默认端口"在 env var 协调下对齐。
+// =====================================================================
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// 清理测试可能影响的环境变量(`PROTOFORGE_API_PORT` / `PROTOFORGE_SIDECAR_PORT`)。
+    fn clear_env() {
+        // SAFETY: tests in this module are single-threaded by default.
+        unsafe {
+            std::env::remove_var("PROTOFORGE_API_PORT");
+            std::env::remove_var("PROTOFORGE_SIDECAR_PORT");
+        }
+    }
+
+    #[test]
+    fn port_defaults_when_no_env_set() {
+        clear_env();
+        assert_eq!(sidecar_port(), SIDECAR_API_PORT_DEFAULT);
+        assert_eq!(sidecar_port(), 7655);
+    }
+
+    #[test]
+    fn port_prefers_protoforge_api_port() {
+        clear_env();
+        // SAFETY: tests in this module are single-threaded by default.
+        unsafe {
+            std::env::set_var("PROTOFORGE_API_PORT", "7654");
+        }
+        assert_eq!(sidecar_port(), 7654);
+        clear_env();
+    }
+
+    #[test]
+    fn port_falls_back_to_legacy_sidecar_port() {
+        clear_env();
+        // SAFETY: tests in this module are single-threaded by default.
+        unsafe {
+            std::env::set_var("PROTOFORGE_SIDECAR_PORT", "8000");
+        }
+        assert_eq!(sidecar_port(), 8000);
+        clear_env();
+    }
+
+    #[test]
+    fn api_port_wins_over_legacy_sidecar_port() {
+        clear_env();
+        // SAFETY: tests in this module are single-threaded by default.
+        unsafe {
+            std::env::set_var("PROTOFORGE_API_PORT", "7654");
+            std::env::set_var("PROTOFORGE_SIDECAR_PORT", "8000");
+        }
+        // PROTOFORGE_API_PORT 优先(P0-C1 修复)
+        assert_eq!(sidecar_port(), 7654);
+        clear_env();
+    }
+
+    #[test]
+    fn invalid_port_string_falls_through() {
+        clear_env();
+        // SAFETY: tests in this module are single-threaded by default.
+        unsafe {
+            std::env::set_var("PROTOFORGE_API_PORT", "not-a-number");
+        }
+        // 解析失败 → 落到 default
+        assert_eq!(sidecar_port(), SIDECAR_API_PORT_DEFAULT);
+        clear_env();
+    }
 }
