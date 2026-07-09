@@ -66,6 +66,38 @@ class RitualInfo(BaseModel):
 
 
 # ---------------------------------------------------------------------------
+# Exit Penalty (Phase 3 Task 3)
+# ---------------------------------------------------------------------------
+
+class UnfinishedRun(BaseModel):
+    """上次未完成的锻造(给前端"未完成"列表用)。"""
+    run_id: str
+    ritual: Ritual
+    current_step: int
+    total_steps: int
+    started_at: str
+    outcome: Literal["keep", "lose"] = Field(
+        ...,
+        description="退出时的判定(KEEP=算完保留,LOSE=没算完丢失)",
+    )
+
+
+class ExitEvaluationRequest(BaseModel):
+    """手动 evaluate 某 run 的退出结果(调试/前端 resume 流程用)。"""
+    run_id: str
+
+
+class ExitEvaluationResponse(BaseModel):
+    """evaluate 结果。"""
+    outcome: Literal["keep", "lose"]
+    ritual: Ritual
+    progress_ratio: float = Field(
+        ...,
+        description="当前进度比例(0.0-1.0)。**不暴露给玩家 UI**,只给调试用。",
+    )
+
+
+# ---------------------------------------------------------------------------
 # Shared
 # ---------------------------------------------------------------------------
 

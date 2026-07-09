@@ -4,6 +4,8 @@ Phase 1:不直接 import proto-language(它要 micromamba + 一堆生物模型),
 内含子序列 + 内置评分器即可验证玩法。Phase 1.5 再接真 proto-language。
 
 Phase 3 Task 2:4 档难度由玩家主动选择(ritual.py),与硬件解耦。
+Phase 3 Task 3:退出惩罚 — run_forge 通过 RitualStateStore 写进度,
+应用启动时 recover_unfinished_runs() 处理上次未完成的。
 """
 from __future__ import annotations
 import time
@@ -16,6 +18,11 @@ from typing import Any
 
 from .scorer import score_intron
 from .ritual import RitualSpec, default_ritual, get_ritual
+from .ritual_state import (
+    RitualStateStore,
+    RitualRunState,
+    get_default_store,
+)
 from app.config import settings
 
 
@@ -80,8 +87,14 @@ def _mcmc_search(
     seed: int | None,
     steps: int,
     params: dict,
+    on_progress=None,
 ) -> tuple[str, dict]:
-    """简化的 Metropolis-Hastings 搜索:生成初始 -> 迭代突变 -> 取最优。"""
+    """简化的 Metropolis-Hastings 搜索:生成初始 -> 迭代突变 -> 取最优。
+
+    Args:
+        on_progress: 可选回调 on_progress(step: int) — 用来把进度写到
+                     RitualStateStore(Phase 3 Task 3 退出惩罚用)。
+    """
     rng = random.Random(seed)
     min_target = float(params.get("min_target_splice", 0.65))
     max_off = float(params.get("max_off_target", 0.20))
@@ -102,7 +115,10 @@ def _mcmc_search(
     current_primary = best_primary
     temp = float(params.get("temperature", 0.8))
 
-    for _ in range(steps):
+    # Phase 3 Task 3:每 10% step 回调一次 on_progress(节流,避免 IO 风暴)
+    next_progress_marker = max(1, steps // 10) if steps > 0 else 1
+
+    for step in range(steps):
         candidate = _mutate(current_seq, rng, rate=0.05)
         raw = score_intron(candidate, min_target_splice=min_target, max_off_target_splice=max_off)
         primary = max(
@@ -122,6 +138,16 @@ def _mcmc_search(
             best_raw = raw
             best_primary = primary
 
+        # 节流回调:每 10% 一次 + 最后一步
+        if on_progress is not None and (
+            (step + 1) % next_progress_marker == 0 or (step + 1) == steps
+        ):
+            try:
+                on_progress(step + 1)
+            except Exception:  # noqa: BLE001
+                # 回调失败不能让 MCMC 崩
+                pass
+
     return best_seq, best_raw
 
 
@@ -131,6 +157,7 @@ def run_forge(
     generator: str,
     seed: int | None = None,
     ritual: str = "urgent",
+    state_store: RitualStateStore | None = None,
 ) -> ForgeResult:
     """端到端跑一次 forge(生成 + 评分 + 仪式名)。
 
@@ -140,6 +167,8 @@ def run_forge(
         generator: 序列生成模式(uniform / random / preference)
         seed: 随机种子(可复现)
         ritual: 锻炉档位(玩家主动选,默认 urgent/急锻)
+        state_store: Phase 3 Task 3 用 — 持久化 run 进度。
+                     传 None 时走 default singleton(自动写盘)。
 
     Returns:
         ForgeResult:包含 intron / fasta / 评分 / 仪式名 / 徽章
@@ -161,12 +190,26 @@ def run_forge(
     mcmc_steps = int(params.get("mcmc_steps", spec.calculation_steps))
     mcmc_steps = max(1, mcmc_steps)
 
+    # Phase 3 Task 3:start a run, get run_id, install on_progress callback
+    store = state_store if state_store is not None else get_default_store()
+    run_state: RitualRunState = store.start(ritual)
+    run_id = run_state.run_id
+
+    def _on_progress(step: int) -> None:
+        # 容错:store.update 失败不能让 MCMC 崩
+        try:
+            store.update(run_id, step)
+        except Exception:  # noqa: BLE001
+            pass
+
     start = time.perf_counter()
     if mcmc_steps <= 1:
         intron = _generate_intron(length, generator, seed)
         raw = score_intron(intron, min_target_splice=min_target, max_off_target_splice=max_off)
+        # mcmc_steps=1 路径也标记当前 step
+        _on_progress(mcmc_steps)
     else:
-        intron, raw = _mcmc_search(length, generator, seed, mcmc_steps, params)
+        intron, raw = _mcmc_search(length, generator, seed, mcmc_steps, params, on_progress=_on_progress)
 
     primary = max(
         0.0,
@@ -190,8 +233,8 @@ def run_forge(
     elapsed = int((time.perf_counter() - start) * 1000)
     fasta = f">protoforge_{mission_id}\n{intron}\n"
 
-    return ForgeResult(
-        run_id=f"run_{int(time.time() * 1000)}",
+    result = ForgeResult(
+        run_id=run_id,
         mission_id=mission_id,
         ritual=spec.name.value,
         ritual_used=spec.name.value,
@@ -215,11 +258,80 @@ def run_forge(
         passed_gate=raw["passes_thresholds"],
     )
 
+    # Phase 3 Task 3:标完成 + 存 result(让 KEEP_RESULT 路径生效)
+    try:
+        store.complete(run_id, _result_to_json(result))
+    except Exception:  # noqa: BLE001
+        # 写盘失败不能让 forge 失败(返回结果优先)
+        pass
+
+    return result
+
+
+def _result_to_json(result: ForgeResult) -> dict:
+    """把 ForgeResult 转成可序列化的 dict(给 ritual_state 存盘用)。"""
+    return {
+        "run_id": result.run_id,
+        "mission_id": result.mission_id,
+        "ritual": result.ritual,
+        "ritual_used": result.ritual_used,
+        "duration_ms": result.duration_ms,
+        "duration_estimate_sec": result.duration_estimate_sec,
+        "badge_unlocked": result.badge_unlocked,
+        "intron": result.intron,
+        "fasta": result.fasta,
+        "scores": result.scores,
+        "risk_flags": result.risk_flags,
+        "passed_gate": result.passed_gate,
+    }
+
+
+def recover_unfinished_runs(
+    state_store: RitualStateStore | None = None,
+) -> list[ForgeResult]:
+    """应用启动时调一次,处理上次未完成的 run。
+
+    对每个 status in (running, lost) 的 run:
+    * running → evaluate_exit_on_return(可能标 lost)
+    * 已经是 lost 的 → 跳过(只查不写)
+
+    Returns:
+        list[ForgeResult]: 本次启动时**保留**的 run(KEEP_RESULT)。
+        这些可以放回"未完成"列表(虽然已算完)。
+    """
+    store = state_store if state_store is not None else get_default_store()
+    kept: list[ForgeResult] = []
+    for state in store.list_unfinished():
+        # 只处理 running 状态(已 lost 的不动)
+        if state.status != "running":
+            continue
+        outcome = store.evaluate_exit_on_return(state.run_id)
+        if outcome.value == "keep":
+            # 没找到对应 result(因为上次退出时没存 result)
+            # 这里不强行 forge 一次 — 只标完成 + 返回最小 ForgeResult
+            # (如果玩家想要完整 result,需要重新跑)
+            kept.append(ForgeResult(
+                run_id=state.run_id,
+                mission_id="unknown",  # 上次 run 没存 mission_id
+                ritual=state.ritual,
+                ritual_used=state.ritual,
+                duration_ms=0,
+                duration_estimate_sec=0,
+                badge_unlocked=None,
+                intron="",
+                fasta="",
+                scores={"primary": 0.0, "components": {}, "weights": {}},
+                risk_flags=[],
+                passed_gate=False,
+            ))
+    return kept
+
 
 def run_polar_glow(
     params: dict,
     generator: str = "preference",
     seed: int | None = None,
     ritual: str = "urgent",
+    state_store: RitualStateStore | None = None,
 ) -> ForgeResult:
-    return run_forge("polar-glow-v1", params, generator, seed, ritual=ritual)
+    return run_forge("polar-glow-v1", params, generator, seed, ritual=ritual, state_store=state_store)

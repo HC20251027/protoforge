@@ -5,7 +5,7 @@ import { SliderCard } from '../components/SliderCard';
 import { ForgeAnimation } from '../components/ForgeAnimation';
 import { ScoreRadar } from '../components/ScoreRadar';
 import { SequenceView } from '../components/SequenceView';
-import { Mission, SliderParam } from '@protoforge/shared';
+import { Mission, SliderParam, UnfinishedRun } from '@protoforge/shared';
 
 // ---------------------------------------------------------------------------
 // 4 档仪式定义(Phase 3 Task 2)
@@ -32,6 +32,13 @@ const RITUAL_OPTIONS: RitualOption[] = [
 ];
 
 const RITUAL_STORAGE_KEY = 'protoforge.ritual';
+
+const RITUAL_DISPLAY: Record<string, string> = {
+  urgent: '急锻档',
+  standard: '主锻档',
+  ancient: '古法锻档',
+  crystal: '晶种培育档',
+};
 
 function loadRitual(): RitualKey {
   try {
@@ -72,6 +79,8 @@ export function ForgePage() {
     badge_unlocked?: string | null;
   } | null>(null);
   const [err, setErr] = useState<string | null>(null);
+  // Phase 3 Task 3:上次未完成的 run 列表
+  const [unfinished, setUnfinished] = useState<UnfinishedRun[]>([]);
 
   useEffect(() => {
     missionApi
@@ -86,6 +95,33 @@ export function ForgePage() {
       })
       .catch((e: Error) => setErr(e.message));
   }, [missionId]);
+
+  // Phase 3 Task 3:启动时加载"上次未完成的锻造"列表
+  useEffect(() => {
+    forgeApi
+      .unfinished()
+      .then((items) => setUnfinished(items))
+      .catch(() => {
+        // 后端 0 列表 / 失败 → 不阻塞 UI
+        setUnfinished([]);
+      });
+  }, []);
+
+  const handleRestartUnfinished = (r: UnfinishedRun) => {
+    // LOSE 的"重新开始"按钮:直接切到该 ritual(后端 run_forge 走完整流程)
+    handleSelectRitual(r.ritual);
+    // 不主动触发 forge — 让玩家自己点"开始锻造"
+  };
+
+  const handleSimulateExit = () => {
+    // dev 专用:模拟"锻造中途退出" — 走 exit-evaluate 看 outcome
+    // 这是测试按钮,仅 dev 可见。
+    if (!import.meta.env.DEV) return;
+    alert(
+      '⚠️ 锻造中退出游戏会有概率失败\n' +
+        '(dev 模拟:请直接关闭浏览器标签页,然后重新打开本页面 — 顶部"上次未完成的锻造"会展示真实 outcome)',
+    );
+  };
 
   const handleRun = async () => {
     if (!mission) return;
@@ -142,6 +178,67 @@ export function ForgePage() {
         <h1 className="text-2xl font-bold text-slate-900">{mission.title}</h1>
         <p className="text-sm text-slate-600">{mission.description}</p>
       </header>
+
+      {/* Phase 3 Task 3:开炉时(loading=true)顶部红色横幅 — 固定文案,无百分比 */}
+      {loading ? (
+        <div
+          data-testid="exit-penalty-banner"
+          role="alert"
+          className="rounded border-2 border-rose-400 bg-rose-50 px-3 py-2 text-sm font-semibold text-rose-800"
+        >
+          ⚠️ 锻造中退出游戏会有概率失败
+        </div>
+      ) : null}
+
+      {/* Phase 3 Task 3:上次未完成的锻造列表(KEEP/LOSE 区分) */}
+      {unfinished.length > 0 ? (
+        <section
+          className="rounded-lg border border-slate-200 bg-white p-4"
+          data-testid="unfinished-section"
+        >
+          <h2 className="text-sm font-semibold text-slate-700">上次未完成的锻造</h2>
+          <ul className="mt-2 space-y-2" role="list">
+            {unfinished.map((u) => {
+              const isKeep = u.outcome === 'keep';
+              return (
+                <li
+                  key={u.run_id}
+                  data-testid={`unfinished-${u.outcome}`}
+                  data-run-id={u.run_id}
+                  className={
+                    'rounded border px-3 py-2 text-sm ' +
+                    (isKeep
+                      ? 'border-emerald-300 bg-emerald-50 text-emerald-800'
+                      : 'border-rose-300 bg-rose-50 text-rose-800')
+                  }
+                >
+                  <div className="flex items-center justify-between">
+                    <span>
+                      <strong>{RITUAL_DISPLAY[u.ritual] ?? u.ritual}</strong>
+                      {' · '}
+                      {isKeep ? (
+                        <span data-testid="unfinished-keep-label">✓ 可继续查看结果</span>
+                      ) : (
+                        <span data-testid="unfinished-lose-label">✗ 已丢失(进度不足)</span>
+                      )}
+                    </span>
+                    {!isKeep ? (
+                      <button
+                        type="button"
+                        data-testid="unfinished-restart"
+                        onClick={() => handleRestartUnfinished(u)}
+                        className="rounded bg-rose-600 px-2 py-1 text-xs text-white hover:bg-rose-700"
+                      >
+                        重新开始
+                      </button>
+                    ) : null}
+                  </div>
+                </li>
+              );
+            })}
+          </ul>
+        </section>
+      ) : null}
 
       <section className="rounded-lg border border-slate-200 bg-white p-4" data-testid="ritual-selector">
         <label className="text-sm font-semibold text-slate-700">锻炉档位(玩家主动选择难度)</label>
@@ -225,7 +322,7 @@ export function ForgePage() {
         ))}
       </section>
 
-      <section className="flex gap-3">
+      <section className="flex flex-wrap gap-3">
         <button
           type="button"
           onClick={handleRun}
@@ -235,6 +332,17 @@ export function ForgePage() {
         >
           {loading ? `锻造中(${selectedRitual.display_name})…` : `开始锻造 · ${selectedRitual.display_name}`}
         </button>
+        {import.meta.env.DEV ? (
+          <button
+            type="button"
+            onClick={handleSimulateExit}
+            data-testid="exit-during-forge"
+            className="rounded border border-rose-400 bg-rose-50 px-3 py-2 text-xs text-rose-700 hover:bg-rose-100"
+            title="dev only: 提示玩家去真的关闭浏览器看 outcome"
+          >
+            模拟中途退出 (dev)
+          </button>
+        ) : null}
         {result ? (
           <button
             type="button"

@@ -133,9 +133,9 @@ def test_run_forge_uses_ritual_steps_ancient() -> None:
         "app.proto.engine", fromlist=["_mcmc_search"]
     )._mcmc_search
 
-    def spy(length, generator, seed, steps, params):
+    def spy(length, generator, seed, steps, params, **kwargs):
         captured["steps"] = steps
-        return original_search(length, generator, seed, steps, params)
+        return original_search(length, generator, seed, steps, params, **kwargs)
 
     import app.proto.engine as engine_mod
     engine_mod._mcmc_search = spy
@@ -161,9 +161,9 @@ def test_run_forge_uses_ritual_steps_crystal() -> None:
         "app.proto.engine", fromlist=["_mcmc_search"]
     )._mcmc_search
 
-    def spy(length, generator, seed, steps, params):
+    def spy(length, generator, seed, steps, params, **kwargs):
         captured["steps"] = steps
-        return original_search(length, generator, seed, steps, params)
+        return original_search(length, generator, seed, steps, params, **kwargs)
 
     import app.proto.engine as engine_mod
     engine_mod._mcmc_search = spy
@@ -189,9 +189,9 @@ def test_run_forge_default_ritual_is_urgent() -> None:
         "app.proto.engine", fromlist=["_mcmc_search"]
     )._mcmc_search
 
-    def spy(length, generator, seed, steps, params):
+    def spy(length, generator, seed, steps, params, **kwargs):
         captured["steps"] = steps
-        return original_search(length, generator, seed, steps, params)
+        return original_search(length, generator, seed, steps, params, **kwargs)
 
     import app.proto.engine as engine_mod
     engine_mod._mcmc_search = spy

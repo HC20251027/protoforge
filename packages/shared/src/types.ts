@@ -94,6 +94,29 @@ export interface RitualInfo {
   models: string[];
 }
 
+// --- Exit penalty (Phase 3 Task 3) ---
+
+export type ExitOutcome = 'keep' | 'lose';
+
+export interface UnfinishedRun {
+  run_id: string;
+  ritual: ForgeRitual;
+  current_step: number;
+  total_steps: number;
+  started_at: string;
+  outcome: ExitOutcome;
+}
+
+export interface ExitEvaluationRequest {
+  run_id: string;
+}
+
+export interface ExitEvaluationResponse {
+  outcome: ExitOutcome;
+  ritual: ForgeRitual;
+  progress_ratio: number;
+}
+
 // --- Risk gate ---
 
 export interface RiskCheckRequest {

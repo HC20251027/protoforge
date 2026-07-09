@@ -53,6 +53,16 @@ async def _startup() -> None:
             from app import gallery_store
             gallery_store.set_backend("memory")
 
+    # Phase 3 Task 3:启动时恢复上次未完成的 run(evaluate exit 状态)
+    try:
+        from app.proto.engine import recover_unfinished_runs
+        kept = recover_unfinished_runs()
+        if kept:
+            log.info("Recovered %d unfinished run(s) on startup (KEEP_RESULT)", len(kept))
+    except Exception as exc:  # noqa: BLE001
+        # 恢复失败不能阻止启动
+        log.warning("recover_unfinished_runs failed (continuing): %s", exc)
+
 
 if __name__ == "__main__":
     import uvicorn

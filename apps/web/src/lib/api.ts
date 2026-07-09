@@ -2,6 +2,8 @@ import type {
   Artifact,
   ArtifactCreate,
   ArtifactListResponse,
+  ExitEvaluationRequest,
+  ExitEvaluationResponse,
   ForgeRequest,
   ForgeResult,
   Mission,
@@ -13,6 +15,7 @@ import type {
   RitualInfo,
   TranslateRequest,
   TranslateResponse,
+  UnfinishedRun,
 } from './types';
 
 const BASE = '/api';
@@ -60,6 +63,10 @@ export const forgeApi = {
   run: (req: ForgeRequest) => request<ForgeResult>('POST', '/forge/run', req),
   listRituals: () => request<RitualInfo[]>('GET', '/forge/ritual'),
   recommendRitual: () => request<RitualInfo>('GET', '/forge/ritual/recommend'),
+  // Phase 3 Task 3:退出惩罚
+  unfinished: () => request<UnfinishedRun[]>('GET', '/forge/unfinished'),
+  exitEvaluate: (runId: string) =>
+    request<ExitEvaluationResponse>('POST', '/forge/exit-evaluate', { run_id: runId } as ExitEvaluationRequest),
 };
 
 // --- risk gate ---
