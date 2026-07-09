@@ -4,6 +4,7 @@ import logging
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from app.routers import api_router
+from app.routers.vendor import router as vendor_router
 from app.config import settings
 from app import __version__
 
@@ -34,6 +35,7 @@ app.add_middleware(
 )
 
 app.include_router(api_router)
+app.include_router(vendor_router, prefix="/api/vendor", tags=["vendor"])
 
 
 @app.on_event("startup")

@@ -87,6 +87,25 @@ export const onboardingApi = {
   reset: () => request<OnboardingStatus>('POST', '/onboarding/reset'),
 };
 
+// --- vendor (Phase 3 Task 1.5) ---
+
+export interface VendorResourceStatus {
+  available: boolean;
+  size_mb: number;
+  path: string;
+  model_name?: string;
+}
+
+export interface VendorStatus {
+  proto_language: VendorResourceStatus;
+  ml_models: Record<string, VendorResourceStatus>;
+  local_llm: VendorResourceStatus;
+}
+
+export const vendorApi = {
+  status: () => request<VendorStatus>('GET', '/vendor/status'),
+};
+
 // --- translate ---
 
 export const translateApi = {
