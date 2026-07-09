@@ -85,6 +85,33 @@ export const galleryApi = {
 
 // --- onboarding ---
 
+export type LLMProviderV2 = 'cloud' | 'local-bundled' | 'disabled';
+export type CloudProvider = 'deepseek' | 'claude' | 'openai';
+
+export interface OnboardingState {
+  completed: boolean;
+  llm_provider: LLMProviderV2;
+  cloud_provider: CloudProvider | null;
+  has_api_key: boolean;
+  vendor_status: {
+    proto_language?: VendorResourceStatus;
+    ml_models?: Record<string, VendorResourceStatus>;
+    local_llm?: VendorResourceStatus;
+    error?: string;
+  };
+}
+
+export interface OnboardingSubmission {
+  llm_provider: LLMProviderV2;
+  cloud_provider?: CloudProvider | null;
+  api_key?: string | null;
+}
+
+export interface OnboardingCompleteResponse {
+  ok: boolean;
+  message: string;
+}
+
 export const onboardingApi = {
   status: () => request<OnboardingStatus>('GET', '/onboarding/status'),
   test: (name: string, config: Record<string, string>) =>
@@ -92,6 +119,11 @@ export const onboardingApi = {
   save: (active: string, providers: Record<string, Record<string, string>>) =>
     request<OnboardingStatus>('POST', '/onboarding/save', { active, providers }),
   reset: () => request<OnboardingStatus>('POST', '/onboarding/reset'),
+  // Phase 3 Task 4: 引导页 3 步配置 + 持久化
+  getState: (userId: string) =>
+    request<OnboardingState>('GET', `/onboarding/state?user_id=${encodeURIComponent(userId)}`),
+  complete: (userId: string, sub: OnboardingSubmission) =>
+    request<OnboardingCompleteResponse>('POST', `/onboarding/complete?user_id=${encodeURIComponent(userId)}`, sub),
 };
 
 // --- vendor (Phase 3 Task 1.5) ---

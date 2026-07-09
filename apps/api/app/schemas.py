@@ -221,6 +221,41 @@ class OnboardingTestRequest(BaseModel):
     config: dict
 
 
+# ---------------------------------------------------------------------------
+# Phase 3 Task 4: 引导页 3 步配置 + 持久化
+# ---------------------------------------------------------------------------
+
+class OnboardingState(BaseModel):
+    """GET /api/onboarding/state 返回的当前玩家引导状态。
+
+    设计要点:
+    - 字段名严格对齐前端 `OnboardingState` 类型
+    - `llm_provider` 用新枚举:cloud / local-bundled / disabled
+      (旧 `local` 是连外网 Ollama 的语义,新 `local-bundled` 是用 vendored 本地 LLM)
+    - `cloud_provider` 区分 deepseek / claude / openai 三个云厂商
+    - `has_api_key` 布尔,避免把 key 回传到前端
+    """
+
+    completed: bool
+    llm_provider: Literal["cloud", "local-bundled", "disabled"]
+    cloud_provider: Optional[Literal["deepseek", "claude", "openai"]] = None
+    has_api_key: bool = False
+    vendor_status: dict = Field(default_factory=dict)
+
+
+class OnboardingSubmission(BaseModel):
+    """POST /api/onboarding/complete 的请求体。"""
+
+    llm_provider: Literal["cloud", "local-bundled", "disabled"]
+    cloud_provider: Optional[Literal["deepseek", "claude", "openai"]] = None
+    api_key: Optional[str] = None
+
+
+class OnboardingCompleteResponse(BaseModel):
+    ok: bool
+    message: str
+
+
 class TranslateRequest(BaseModel):
     mission_id: str
     text: str
