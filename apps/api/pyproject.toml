@@ -33,6 +33,13 @@ dev-dependencies = [
 #     "safetensors>=0.4.0",
 # ]
 
+# Phase 3 Task 1.3: 本地 LLM 加载器(Qwen2.5-7B GGUF,接口稳定,不强制装 llama-cpp)
+# Phase 1.5/2 接通 llama-cpp-python 真实推理时取消注释(注意:Windows 上
+# pip install llama-cpp-python 需要先装 Visual Studio Build Tools,会编译 10+ 分钟)
+# llm = [
+#     "llama-cpp-python>=0.2.0",
+# ]
+
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"

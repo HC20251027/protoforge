@@ -1,0 +1,7 @@
+# apps/api 局部 .gitignore
+# 与根 .gitignore 互补,只覆盖 apps/api 目录树
+# 注意:此文件中的路径模式相对本文件所在目录(apps/api/),不是 git 根
+
+# 本地 LLM 权重(Qwen2.5-7B GGUF ~4.4GB)不进 git
+# README / sha256 sidecar 仍保留在 git
+vendor/llm/*.gguf
