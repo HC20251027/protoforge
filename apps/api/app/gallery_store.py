@@ -149,29 +149,60 @@ async def _get_sqlite(artifact_id: str) -> Artifact | None:
 
 # ---------------------------------------------------------------------------
 # Sync wrappers(根据当前 backend 选择)
+#
+# Phase 3 Task 6 P0-A1:之前用 `asyncio.run(_coro)` 在 FastAPI 默认
+# thread pool 里会因 "asyncio.run() cannot be called from a running
+# event loop" 抛 RuntimeError(或有 event loop 时直接卡死)。
+#
+# 修复策略:每个**调用**新建一个**独立**的 event loop,跑完即销毁。
+# 这是 sync handler 调 async 代码的标准 pattern(不像 from_thread.run
+# 那样依赖 anyio worker)。保证:
+# 1. 调用方仍是同步函数,FastAPI 兼容。
+# 2. 不会阻塞调用方线程(因为我们跑在独立 loop,不是 asyncio.run 那
+#    种"如果当前线程已有 loop 就报"的路径)。
+# 3. 多请求并发:每个请求一个独立 loop,互不干扰。
+# 4. 跑测试时(TestClient + pytest)也能正常工作(没有 anyio worker)。
 # ---------------------------------------------------------------------------
+
+def _run_async_blocking(coro):
+    """在独立 event loop 上跑协程,完成后销毁 loop。
+
+    为什么不用 `asyncio.run`:
+    - `asyncio.run` 在已有 event loop 的线程(比如 FastAPI 的 async
+      handler 线程、anyio worker 线程)会抛 "asyncio.run() cannot
+      be called from a running event loop" 错误。
+    - `asyncio.run` 在新线程里是 OK 的,但在 sync handler 默认 thread
+      pool 路径上不可靠。
+
+    这里手动 `new_event_loop()` + `run_until_complete()` + `close()`,
+    等价于"每次调用都开新 loop,跑完就关",从根上避免"在已有 loop
+    里再开 loop"的问题。
+    """
+    import asyncio
+
+    loop = asyncio.new_event_loop()
+    try:
+        return loop.run_until_complete(coro)
+    finally:
+        loop.close()
+
 
 def add(req: ArtifactCreate) -> Artifact:
     if _BACKEND == "memory":
         return _add_mem(req)
-    # 同步入口 — 跑 event loop 一次。pytest 用 TestClient 已经在线程里,
-    # 用 asyncio.run 是安全的(每个请求一个新 loop)。
-    import asyncio
-    return asyncio.run(_add_sqlite(req))
+    return _run_async_blocking(_add_sqlite(req))
 
 
 def list_all() -> ArtifactListResponse:
     if _BACKEND == "memory":
         return _list_mem()
-    import asyncio
-    return asyncio.run(_list_sqlite())
+    return _run_async_blocking(_list_sqlite())
 
 
 def get(artifact_id: str) -> Artifact | None:
     if _BACKEND == "memory":
         return _get_mem(artifact_id)
-    import asyncio
-    return asyncio.run(_get_sqlite(artifact_id))
+    return _run_async_blocking(_get_sqlite(artifact_id))
 
 
 def reset() -> None:
@@ -179,7 +210,6 @@ def reset() -> None:
     if _BACKEND == "memory":
         _reset_mem()
         return
-    import asyncio
     from app.db import Base, get_engine
 
     async def _do():
@@ -188,4 +218,4 @@ def reset() -> None:
             await conn.run_sync(Base.metadata.drop_all)
             await conn.run_sync(Base.metadata.create_all)
 
-    asyncio.run(_do())
+    _run_async_blocking(_do())
