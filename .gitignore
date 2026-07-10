@@ -29,7 +29,6 @@ apps/desktop/src-tauri/binaries/python-bundle/
 
 # 项目运行时数据(不进 git)
 .protoforge/
-.protoforge/
 .data/
 .cache/
 models-cache/
@@ -67,8 +66,6 @@ logs/
 *.tsbuildinfo
 apps/web/vite.config.d.ts
 apps/web/vite.config.js
-
-apps/web/*.tsbuildinfo
 
 # CI / 工具链
 .github/CODEOWNERS.bak
