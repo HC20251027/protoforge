@@ -13,6 +13,7 @@ dependencies = [
     "aiosqlite>=0.20.0",
     "httpx>=0.27.0",
     "numpy>=1.26",  # 简化版 SpliceTransformer(PWM)评分需要
+    "cryptography>=49.0.0",
 ]
 
 [tool.uv]
