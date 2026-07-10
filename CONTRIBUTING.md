@@ -101,6 +101,30 @@ cd apps/api && uv run ruff check .
 - `apps/desktop/src-tauri/target/` — Rust 编译产物
 - `apps/desktop/src-tauri/binaries/python-bundle/` — Python 嵌入产物(走 `scripts/bundle_python.py` 重建)
 
+## 6.1 vendor 资源校验
+
+本地权重由 `sha256` 守护(下载后不再变):
+- `apps/api/vendor/llm/qwen2.5-7b-instruct-q4_k_m.sha256` — Qwen2.5-7B GGUF(2 个 shard,4.36GB)
+- `apps/api/vendor/models/esm2-150m/model.safetensors.sha256` — ESM2-150M(567MB)
+
+```bash
+# 校验全部(慢,LLM 4.36GB IO 5+ 分钟)
+uv run python scripts/verify_vendor.py
+
+# 只跑 ESM2 / proto-language(快)
+uv run python scripts/verify_vendor.py --skip-llm
+
+# 只跑某个子目录
+uv run python scripts/verify_vendor.py --only esm2-150m
+```
+
+下载新权重后:
+```bash
+# 用 GNU sha256sum 生成
+cd apps/api/vendor/models/foo
+sha256sum model.bin > model.bin.sha256
+```
+
 # 7. 玩家体验链路(改动前自检)
 改动前先想清楚:这次改动会动到玩家哪条链路?
 ```
