@@ -54,9 +54,12 @@ apps/api/vendor/models/**/*.tflite
 
 # IDE
 .idea/
-.vscode/
 *.swp
 .DS_Store
+# 玩家 / 开发者 .vscode 用户配置(项目 settings.json / extensions.json 仍进 git,见下)
+.vscode/launch.json
+.vscode/tasks.json
+*.code-workspace
 
 # 日志
 *.log
@@ -66,3 +69,10 @@ apps/web/vite.config.d.ts
 apps/web/vite.config.js
 
 apps/web/*.tsbuildinfo
+
+# CI / 工具链
+.github/CODEOWNERS.bak
+.pre-commit-cache/
+
+# changesets 本地状态(changeset 文件本身不进 ignore)
+.changeset/.cache/

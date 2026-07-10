@@ -1,0 +1,56 @@
+{
+  // ProtoForge VSCode 项目级配置
+  // 不强改用户全局配置,只覆盖项目目录内打开的文件
+
+  // ----- 通用 -----
+  "files.eol": "\n",
+  "files.trimTrailingWhitespace": true,
+  "files.insertFinalNewline": true,
+  "files.exclude": {
+    "**/node_modules": true,
+    "**/dist": true,
+    "**/.pnpm-store": true,
+    "**/__pycache__": true,
+    "**/.pytest_cache": true,
+    "**/.ruff_cache": true,
+    "**/target": true,
+    "**/.protoforge": true,
+    "**/.cache": true
+  },
+
+  // ----- TypeScript / React (apps/web) -----
+  "typescript.tsdk": "node_modules/typescript/lib",
+  "typescript.enablePromptUseWorkspaceTsdk": true,
+  "[typescript]": {
+    "editor.defaultFormatter": "esbenp.prettier-vscode",
+    "editor.formatOnSave": true
+  },
+  "[typescriptreact]": {
+    "editor.defaultFormatter": "esbenp.prettier-vscode",
+    "editor.formatOnSave": true,
+    "editor.codeActionsOnSave": { "source.fixAll.eslint": "explicit" }
+  },
+
+  // ----- Python (apps/api) -----
+  "[python]": {
+    "editor.defaultFormatter": "charliermarsh.ruff",
+    "editor.formatOnSave": true,
+    "editor.codeActionsOnSave": { "source.fixAll.ruff": "explicit" },
+    "editor.quickSuggestions": { "other": true, "comments": false, "strings": false }
+  },
+  "python.defaultInterpreterPath": "apps/api/.venv/Scripts/python.exe",
+  "python.analysis.autoImportCompletions": true,
+  "python.testing.pytestEnabled": true,
+  "python.testing.unittestEnabled": false,
+
+  // ----- Tailwind -----
+  "tailwindCSS.experimental.classRegex": [
+    ["cn\\(([^)]*)\\)", "[\"'`]([^\"'`]*).*?[\"'`]"]
+  ],
+
+  // ----- Rust (apps/desktop) -----
+  "rust-analyzer.linkedProjects": ["apps/desktop/src-tauri/Cargo.toml"],
+
+  // ----- 统一换行符 -----
+  "files.encoding": "utf8"
+}
