@@ -1,0 +1,20 @@
+# ProtoForge 代码所有者
+# 单人 / 少数开发者项目,主要用作 GitHub 自动指派 Reviewer
+
+# 默认:所有变更需要 review
+* @maintainers
+
+# API(Python)单独 owner
+/apps/api/ @api-maintainer
+
+# Web(React + TS)单独 owner
+/apps/web/ @web-maintainer
+
+# Desktop(Tauri)单独 owner
+/apps/desktop/ @desktop-maintainer
+
+# CI / 工作流 / 依赖扫描 — 推 main 前必须 review
+/.github/ @maintainers
+/.pre-commit-config.yaml @maintainers
+/package.json @maintainers
+/pnpm-workspace.yaml @maintainers

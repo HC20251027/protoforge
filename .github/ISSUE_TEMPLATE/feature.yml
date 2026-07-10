@@ -1,0 +1,61 @@
+name: Feature Request
+description: 提议新功能
+title: "[Feature] "
+labels: ["enhancement", "triage"]
+body:
+  - type: dropdown
+    id: area
+    attributes:
+      label: 影响范围
+      options:
+        - 核心玩法(锻造 / 任务 / 4 档)
+        - 退出惩罚 / 持久化
+        - 引导页 / 玩家配置
+        - Steam 创意工坊 / 上传
+        - LLM / AI 集成
+        - UI / 交互
+        - 数据 / 持久化
+    validations:
+      required: true
+
+  - type: textarea
+    id: motivation
+    attributes:
+      label: 动机
+      placeholder: |
+        解决什么玩家痛点?为什么现在做?
+        (关联 Phase 3 决策:N1/N2/N3/4档/退出惩罚/引导页?— 如相关)
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposal
+    attributes:
+      label: 提议方案
+      placeholder: |
+        简述实现思路:
+        - 涉及哪些模块(apps/api / apps/web / apps/desktop)
+        - 是否需要新依赖
+        - 是否需要 schema / 协议变更(.protoforge 格式 / 4 档定义 / 评分器接口)
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: 备选方案
+    validations:
+      required: false
+
+  - type: dropdown
+    id: size
+    attributes:
+      label: 估算
+      options:
+        - XS (< 1 小时)
+        - S (1-4 小时)
+        - M (半天-1 天)
+        - L (2-3 天)
+        - XL (1 周+)
+    validations:
+      required: false

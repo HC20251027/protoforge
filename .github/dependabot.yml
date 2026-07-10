@@ -1,0 +1,46 @@
+# Dependabot 配置 — 三生态:npm + pip + github-actions
+# 依据:Dependabot 官方文档支持 pnpm-lock.yaml + uv.lock
+# weekly 节奏 + groups 合并,避免轰炸小项目
+
+version: 2
+
+updates:
+  # ----- npm 生态(根 + 全部子包)-----
+  - package-ecosystem: "npm"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "04:00"
+    open-pull-requests-limit: 5
+    groups:
+      dev-deps:
+        dependency-type: "development"
+        patterns: ["*"]
+      prod-deps:
+        dependency-type: "production"
+        patterns: ["*"]
+    # 关键 monorepo 路径
+    ignore:
+      - dependency-name: "@protoforge/*"
+        # workspace 内部包,不升级
+
+  # ----- pip 生态(uv.lock)-----
+  - package-ecosystem: "pip"
+    directory: "/apps/api"
+    schedule:
+      interval: "weekly"
+      day: "tuesday"
+      time: "04:00"
+    open-pull-requests-limit: 3
+    groups:
+      dev-deps:
+        dependency-type: "development"
+        patterns: ["*"]
+
+  # ----- GitHub Actions 自身-----
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "monthly"
+    open-pull-requests-limit: 3

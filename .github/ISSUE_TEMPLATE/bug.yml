@@ -1,0 +1,68 @@
+name: Bug Report
+description: 报告一个 Bug
+title: "[Bug] "
+labels: ["bug", "triage"]
+body:
+  - type: dropdown
+    id: area
+    attributes:
+      label: 影响范围
+      options:
+        - apps/api (Python sidecar)
+        - apps/web (React 前端)
+        - apps/desktop (Tauri 桌面)
+        - packages/shared
+        - CI / pre-commit / dependabot
+        - 文档 / 构建脚本
+        - 玩家数据持久化
+    validations:
+      required: true
+
+  - type: dropdown
+    id: severity
+    attributes:
+      label: 严重度
+      options:
+        - P0 — 阻塞核心玩法(锻造 / 退出惩罚 / 通关 / 上传)
+        - P1 — 重要功能不可用
+        - P2 — 一般 bug,有 workaround
+        - P3 — 体验问题 / 边角
+    validations:
+      required: true
+
+  - type: textarea
+    id: repro
+    attributes:
+      label: 复现步骤
+      placeholder: |
+        1. 启动 ProtoForge ...
+        2. 在引导页选 ...
+        3. 选 4 档 ...
+      validations:
+        required: true
+
+  - type: textarea
+    id: expect
+    attributes:
+      label: 期望 vs 实际
+      placeholder: |
+        期望: ...
+        实际: ...
+    validations:
+      required: true
+
+  - type: input
+    id: env
+    attributes:
+      label: 环境
+      placeholder: "OS: Windows 11 / Python 3.12.4 / Node 20.11 / Tauri 2.0.0"
+    validations:
+      required: false
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: 错误日志
+      placeholder: "粘贴 `apps/api/.protoforge/logs/` 或浏览器 Console 报错"
+    validations:
+      required: false

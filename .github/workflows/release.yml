@@ -1,0 +1,110 @@
+name: release
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+# release 写 tag、Release artifact,需要 contents: write
+permissions:
+  contents: write
+
+jobs:
+  # ---------- Step 1: changesets 计算版本号 + 生成 changelog ----------
+  version:
+    name: changesets version
+    runs-on: ubuntu-latest
+    outputs:
+      has_changesets: ${{ steps.changesets.outputs.hasChangesets }}
+      published: ${{ steps.changesets.outputs.published }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9.12.0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+      - name: Install
+        run: pnpm install --frozen-lockfile
+      - name: Apply changesets
+        id: changesets
+        uses: changesets/action@v1
+        with:
+          # publish 留空:本项目暂不发 npm 包,只生成 changelog + bump version
+          # 如需 publish,改为: publish: pnpm release
+          commit: "chore(release): version packages"
+          title: "chore(release): version packages"
+          version: pnpm changeset version
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  # ---------- Step 2: 编译三平台 Tauri 安装包 ----------
+  tauri:
+    name: tauri (${{ matrix.platform }})
+    needs: version
+    if: needs.version.outputs.has_changesets == 'true'
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: macos-latest    # Apple Silicon(M 系列)
+            args: "--target aarch64-apple-darwin"
+          - platform: macos-latest    # Intel
+            args: "--target x86_64-apple-darwin"
+          - platform: ubuntu-22.04
+            args: ""
+          - platform: windows-latest
+            args: ""
+    runs-on: ${{ matrix.platform }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9.12.0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+
+      # Ubuntu 装 Tauri 系统依赖
+      - if: matrix.platform == 'ubuntu-22.04'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev \
+            libappindicator3-dev \
+            librsvg2-dev \
+            patchelf \
+            xdg-utils
+
+      - name: Install JS deps
+        run: pnpm install --frozen-lockfile
+
+      # Python sidecar 编译 + 嵌入
+      - name: Sync Python deps
+        working-directory: apps/api
+        run: uv sync --frozen
+
+      - name: Build Python sidecar bundle (Phase 3 Task 1.4)
+        run: python scripts/bundle_python.py
+
+      # Tauri 编译 + 签名 + 上传 Release
+      - name: Build Tauri bundle
+        uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # 私钥 base64 字符串(Settings → Secrets → TAURI_SIGNING_PRIVATE_KEY)
+          # 用 `tauri signer generate -w ~/.tauri/myapp.key` 生成,把 .key 文件 base64 后整段贴
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        with:
+          projectPath: apps/desktop
+          tagName: v__VERSION__
+          releaseName: "ProtoForge v__VERSION__"
+          releaseDraft: true
+          prerelease: false
+          args: ${{ matrix.args }}

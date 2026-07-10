@@ -1,0 +1,114 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+# 同 PR 的新 push 自动取消旧 run,省 CI 分钟
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+# 默认最小权限
+permissions:
+  contents: read
+
+jobs:
+  # ---------- Job 1: Node 侧(共享 ESLint + tsc + vitest)----------
+  web:
+    name: web (lint + tsc + test)
+    runs-on: ubuntu-latest
+    defaults:
+      working-directory: apps/web
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9.12.0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+      - name: Install (frozen lockfile)
+        run: pnpm install --frozen-lockfile
+      - name: Lint
+        # Phase 3:仅打印,失败不阻塞 PR(开发者体验优先)
+        # 配合 .vscode/settings.json 的 onSave format / IDE lint
+        # Phase 4 转成 fail-on-error
+        run: pnpm lint || true
+      - name: Type check
+        run: pnpm exec tsc --noEmit
+      - name: Unit tests
+        run: pnpm test
+
+  # ---------- Job 2: Python 侧(FastAPI + uv)----------
+  api:
+    name: api (ruff + pytest smoke)
+    runs-on: ubuntu-latest
+    env:
+      PROTOFORGE_DATA_DIR: ${{ runner.temp }}/protoforge-data
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          python-version: "3.12"
+          enable-cache: true
+          cache-dependency-glob: "apps/api/uv.lock"
+      - name: Sync (frozen)
+        working-directory: apps/api
+        run: uv sync --frozen
+      - name: Lint (ruff)
+        working-directory: apps/api
+        run: uv run ruff check .
+      - name: Format check
+        working-directory: apps/api
+        run: uv run ruff format --check .
+      - name: Unit + integration tests
+        working-directory: apps/api
+        # Phase 3:全量 213 测试 CI 跑得动(秒级),不拆 smoke
+        run: uv run pytest -q
+
+  # ---------- Job 3: 共享包(workspace)----------
+  shared:
+    name: shared (tsc)
+    runs-on: ubuntu-latest
+    defaults:
+      working-directory: packages/shared
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9.12.0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm exec tsc --noEmit
+
+  # ---------- Job 4: 依赖安全扫描(不阻塞,仅警告)----------
+  security:
+    name: security (audit, advisory only)
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9.12.0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: pnpm audit (advisory)
+        run: pnpm audit --audit-level=high || true
+      - uses: astral-sh/setup-uv@v5
+        with:
+          python-version: "3.12"
+          enable-cache: true
+      - name: pip-audit
+        working-directory: apps/api
+        run: uv tool run --from pip-audit pip-audit || true
