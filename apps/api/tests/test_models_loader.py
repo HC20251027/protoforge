@@ -20,6 +20,7 @@ from app.models.loader import (
     ESM2Loader,
     SpliceAILoader,
     SpliceTransformerLoader,
+    _MAGIC_BYTES,
     all_loaders,
     get_loader,
     get_vendor_root,
@@ -206,3 +207,58 @@ def test_summary_marks_available_when_file_present(tmp_path):
     assert s["spliceai"]["available"] is False
     assert s["splice-transformer"]["available"] is False
     assert s["esm2-150m"]["file_count"] == 1
+
+
+# ---------------------------------------------------------------------------
+# 5. Phase 4 A2:GGUF magic byte bug + 加载失败显式化
+# ---------------------------------------------------------------------------
+
+def test_gguf_magic_correct_is_v3():
+    """GGUF v3 真文件头 = b"\x03GGUF"(version_byte + "GGUF")。
+
+    之前的 b"GGUF" 漏了版本号,真模型加载会失败。本测试 pin 住正确值。
+    """
+    assert _MAGIC_BYTES[".gguf"] == b"\x03GGUF"
+    # 其它扩展名不应被这次修改影响
+    assert _MAGIC_BYTES[".h5"] == b"\x89HDF\r\n\x1a\n"
+    assert _MAGIC_BYTES[".hdf5"] == b"\x89HDF\r\n\x1a\n"
+    assert _MAGIC_BYTES[".pt"] == b"PK\x03\x04"
+    assert _MAGIC_BYTES[".pth"] == b"PK\x03\x04"
+    assert _MAGIC_BYTES[".keras"] == b"PK\x03\x04"
+
+
+def test_gguf_try_load_wrong_magic_raises(tmp_path):
+    """Phase 4 A2: 写一个 magic 错的 .gguf 文件(模拟下载中断 / 文件损坏),
+    基类 `try_load` 必须显式抛 LLMUnavailable,**不能**静默返回 None。
+
+    之前 magic 不匹配是 `continue` + warn,玩家根本不知道文件坏了。
+    修复后跟 P0-A2 一致:不静默退化,显式抛错让上游 router 区分
+    "文件损坏" vs "未下载"。
+    """
+    from app.llm.loader import LLMUnavailable
+    from app.models.loader import ModelLoader
+
+    class _FakeGGUFLoader(ModelLoader):
+        """最小 loader,只为了触发基类 try_load 的 GGUF magic 校验分支。"""
+
+        name = "fake-gguf"
+        subdir_name = "fake-gguf"
+        model_size_mb = 100
+        min_size_mb = 1  # 1MB 即可触发 is_available()
+
+        def _candidate_files(self) -> list[Path]:
+            return [self.vendor_dir / "model.gguf"]
+
+    override_vendor_root(tmp_path / "vendor")
+    loader = _FakeGGUFLoader()
+    loader.vendor_dir.mkdir(parents=True, exist_ok=True)
+
+    # 写一个 2MB 的"假 GGUF":magic 用 b"GGUF"(老错误值)模拟损坏
+    fake_path = loader.vendor_dir / "model.gguf"
+    fake_path.write_bytes(b"GGUF" + b"\x00" * (2 * 1024 * 1024 - 4))
+
+    # is_available 应为 True(大小 >= 1MB)
+    assert loader.is_available() is True
+    # try_load 必须显式抛 LLMUnavailable,**不是** warn + return None
+    with pytest.raises(LLMUnavailable, match="magic"):
+        loader.try_load()

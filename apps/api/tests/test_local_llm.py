@@ -49,16 +49,15 @@ def _isolate_loader_path(monkeypatch, tmp_path):
 
 
 def _make_fake_gguf(path: Path, size_mb: int) -> None:
-    """写一个带 GGUF magic 的 N MB 文件。
+    """写一个带 GGUF v3 magic 的 N MB 文件。
 
-    与 `app.models.loader._MAGIC_BYTES[".gguf"]` 对齐:文件头 4 字节是 "GGUF"。
-    (GGUF v3 在前 4 字节是 0x00000003 little-endian,但 loader 用的 magic-bytes 表
-    只校验 bytes 是否以 "GGUF" 开头 — 真实文件 magic = 0x03 0x47 0x47 0x55 0x46,
-    前 4 字节的 "GGUF" 在 offset 1。我们这里用 magic table 的实际逻辑:
-    `b"GGUF"`,4 字节,前 4 字节必须 = b"GGUF"。
+    与 `app.models.loader._MAGIC_BYTES[".gguf"]` 对齐:真 GGUF v3 文件头 4 字节是
+    `b"\x03GGUF"`(version_byte=0x03 在前,后跟 ASCII "GGUF")。
+    Phase 4 A2 之前 magic 是错的 `b"GGUF"`,测试辅助函数也同步用旧值,
+    导致所有"合法 GGUF"测试用例在新 magic 下静默失败。现在统一改成 `b"\x03GGUF"`。
     """
     path.parent.mkdir(parents=True, exist_ok=True)
-    magic = b"GGUF"
+    magic = b"\x03GGUF"
     with path.open("wb") as f:
         f.write(magic)
         chunk = b"\x00" * (1024 * 1024)

@@ -129,7 +129,18 @@ class ModelLoader(ABC):
         for f in self.model_files():
             try:
                 if not _check_magic(f):
-                    continue
+                    # magic 不匹配 → 显式失败(跟 P0-A2 一致:不静默退化)。
+                    # 之前这里是 continue + warn,真 GGUF/H5/PT 损坏时会悄悄
+                    # 退到"weights missing"分支,玩家根本不知道是文件坏了。
+                    # 这里抛 LLMUnavailable,让上游 router 把"文件损坏"和
+                    # "未下载"走不同分支处理。
+                    # 注意:仅对 _check_magic 已知 magic 的扩展名(非 safetensors/
+                    # bin/onnx/未知扩展名)走 raise 路径;后者 fallback 走 size 检查。
+                    from app.llm.loader import LLMUnavailable
+                    raise LLMUnavailable(
+                        f"权重文件 magic 校验失败: {f} "
+                        f"(扩展名 {f.suffix!r},期望 magic {_MAGIC_BYTES.get(f.suffix.lower())!r})"
+                    )
                 # 1MB 校验就够了,真加载留给后续阶段
                 _ = sha256_first_mb(f, mb=1)
             except OSError:
@@ -173,8 +184,12 @@ _MAGIC_BYTES: dict[str, bytes] = {
     # pytorch .pt / .pth 通常是 zip header "PK\x03\x04"
     ".pt": b"PK\x03\x04",
     ".pth": b"PK\x03\x04",
-    # ggml / gguf: "GGUF" magic at offset 0
-    ".gguf": b"GGUF",
+    # ggml / gguf: 真 GGUF v3 文件头结构:
+    #   4 字节 magic = version_byte(1 byte) + "GGUF"(3 bytes)
+    #   例:GGUF v3 → b"\x03GGUF"  (版本号 3 在前,后跟 ASCII "GGUF")
+    #   旧版 GGUF v1/v2 → b"\x01GGUF" / b"\x02GGUF"(已被 llama.cpp 弃用)
+    # 之前的 b"GGUF" 是错的(漏了版本号),真模型加载时静默失败。
+    ".gguf": b"\x03GGUF",
     # tensorflow keras: 也是 zip
     ".keras": b"PK\x03\x04",
 }
