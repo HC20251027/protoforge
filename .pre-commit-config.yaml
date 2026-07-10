@@ -31,9 +31,8 @@ repos:
     rev: v0.7.4
     hooks:
       - id: ruff
-        # Phase 3 收官时 ruff 报 21 个 F401,先 --fix 但不 fail
-        # Phase 4 cleanup 后改回 --exit-non-zero-on-fix
-        args: [--fix]
+        # Phase 4 C1:清完 21 个 F401 后,pre-commit 必须 fail-on-fix,阻止引入新未用 import
+        args: [--fix, --exit-non-zero-on-fix]
         files: '^apps/api/'
       - id: ruff-format
         files: '^apps/api/'

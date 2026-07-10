@@ -23,7 +23,6 @@ import os
 from fastapi import APIRouter, HTTPException
 
 from app.proto.engine import run_forge
-from app.proto.exit_penalty import evaluate_exit
 from app.proto.ritual import RITUALS, Ritual, get_ritual
 from app.proto.ritual_state import (
     RitualRunState,

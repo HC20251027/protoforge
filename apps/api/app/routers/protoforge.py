@@ -10,15 +10,11 @@ from __future__ import annotations
 
 import logging
 from pathlib import Path
-from typing import Optional
 
 from fastapi import APIRouter, HTTPException, Query
 
 from app.protoforge.packager import list_exports
 from app.protoforge.queue import (
-    STATUS_FAILED,
-    STATUS_PENDING,
-    STATUS_UPLOADED,
     UploadQueue,
 )
 from app.protoforge.steam import get_default_uploader

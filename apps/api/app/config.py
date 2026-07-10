@@ -1,6 +1,5 @@
 """应用配置。所有路径必须在项目目录内,不读 C 盘 AppData。"""
 from __future__ import annotations
-import os
 from pathlib import Path
 from pydantic_settings import BaseSettings, SettingsConfigDict
 

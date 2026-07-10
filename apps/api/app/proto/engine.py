@@ -20,16 +20,14 @@ import random
 import json
 from pathlib import Path
 from dataclasses import dataclass, field
-from typing import Any
 
 from .scorer import score_intron
-from .ritual import RitualSpec, default_ritual, get_ritual
+from .ritual import RitualSpec, get_ritual
 from .ritual_state import (
     RitualStateStore,
     RitualRunState,
     get_default_store,
 )
-from app.config import settings
 
 
 class ForgeExecutionError(RuntimeError):

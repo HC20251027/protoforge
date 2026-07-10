@@ -7,9 +7,9 @@
 """
 from __future__ import annotations
 
+import threading
 import time
 import uuid
-from typing import Any
 
 from app.schemas import Artifact, ArtifactCreate, ArtifactListResponse
 
@@ -28,8 +28,6 @@ def get_backend() -> str:
 # ---------------------------------------------------------------------------
 # Memory backend
 # ---------------------------------------------------------------------------
-
-import threading
 
 _mem_lock = threading.RLock()
 _mem: dict[str, Artifact] = {}

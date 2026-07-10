@@ -9,7 +9,6 @@ from __future__ import annotations
 
 import json
 import re
-from typing import Iterable
 
 from app.llm import load_state
 from app.schemas import Mission
