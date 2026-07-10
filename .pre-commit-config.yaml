@@ -1,0 +1,60 @@
+# ProtoForge pre-commit hooks 配置
+# 设计原则:pre-commit 只跑秒级 hooks,重量级检查(单测 / 类型 / 全量 lint)交给 CI
+
+repos:
+  # ==================== 通用(语言无关) ====================
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v5.0.0
+    hooks:
+      - id: trailing-whitespace
+        # Markdown 不要 trim 尾随空格(两个空格 = 换行符)
+        exclude: '\.md$'
+      - id: end-of-file-fixer
+      - id: check-yaml
+        # 排除 changesets(动态生成)
+        exclude: '^\.changeset/.*\.md$'
+      - id: check-toml
+      - id: check-json
+        exclude: '^(pnpm-lock\.yaml|apps/.*/.*-lock\.yaml)$'
+      - id: check-merge-conflict
+      - id: check-added-large-files
+        args: [--maxkb=512]
+        # 权重文件不进 git,这里只是兜底防止误 commit
+      - id: mixed-line-ending
+        args: [--fix=lf]
+      - id: check-case-conflict
+      - id: detect-private-key
+        # 防 SSH private key / API key 误提交
+
+  # ==================== Python(uv / FastAPI) ====================
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.7.4
+    hooks:
+      - id: ruff
+        # Phase 3 收官时 ruff 报 21 个 F401,先 --fix 但不 fail
+        # Phase 4 cleanup 后改回 --exit-non-zero-on-fix
+        args: [--fix]
+        files: '^apps/api/'
+      - id: ruff-format
+        files: '^apps/api/'
+
+  # ==================== Secret 扫描 ====================
+  - repo: https://github.com/gitleaks/gitleaks
+    rev: v8.21.2
+    hooks:
+      - id: gitleaks
+        # 防 API key / Steam key / Tauri signing key 误提交
+
+  # ==================== CI workflow 自身 ====================
+  - repo: https://github.com/adrienverge/yamllint
+    rev: v1.35.1
+    hooks:
+      - id: yamllint
+        files: '^\.github/workflows/.*\.(yml|yaml)$'
+        args: [--strict, -d, '{rules: {line-length: disable}}']
+
+  - repo: https://github.com/rhysd/actionlint
+    rev: v1.7.7
+    hooks:
+      - id: actionlint
+        files: '^\.github/workflows/.*\.(yml|yaml)$'

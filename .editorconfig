@@ -1,0 +1,35 @@
+# EditorConfig — 项目级基础规则
+# IDE / 编辑器优先读这个,确保跨编辑器一致
+# 详细:https://EditorConfig.org
+
+root = true
+
+[*]
+indent_style = space
+indent_size = 2
+end_of_line = lf
+charset = utf-8
+trim_trailing_whitespace = true
+insert_final_newline = true
+
+# Python(后端)
+[*.py]
+indent_size = 4
+max_line_length = 100
+
+# Markdown 不要 trim 尾随空格(两个空格 = 硬换行)
+[*.{md,mdx}]
+trim_trailing_whitespace = false
+
+# Rust(Tauri 桌面)
+[*.{rs,toml}]
+indent_size = 4
+max_line_length = 100
+
+# Makefile 必须用 tab
+[Makefile]
+indent_style = tab
+
+# Windows 批处理
+[*.{bat,cmd,ps1}]
+end_of_line = crlf
