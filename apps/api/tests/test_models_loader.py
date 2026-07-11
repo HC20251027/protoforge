@@ -111,56 +111,48 @@ def test_try_load_raises_nothing_on_missing_files(tmp_path):
 # 3. 真有合法权重文件时(用 tmp_path 写小文件模拟) try_load 应成功
 # ---------------------------------------------------------------------------
 
-def _make_fake_safetensors(path: Path, size_mb: int) -> None:
-    """写一个 N MB 的二进制文件,内容全 0。safetensors 没有固定 magic,
-    loader 用 size > 1MB 作为 fallback 接受条件。"""
+def _make_fake_safetensors(path: Path, size_mb: int = 2) -> None:
+    """写一个 2MB 二进制占位文件(Phase 4 L4:阈值已注入 1MB,写 2MB 通过 _check_magic 的 size > 1MB 检查)。"""
     path.parent.mkdir(parents=True, exist_ok=True)
-    chunk = b"\x00" * (1024 * 1024)
-    with path.open("wb") as f:
-        for _ in range(size_mb):
-            f.write(chunk)
+    path.write_bytes(b"")
+    os.truncate(path, size_mb * 1024 * 1024)
 
 
-def _make_fake_h5(path: Path, size_mb: int) -> None:
-    """写一个带 HDF5 magic 的 N MB 文件(最小可识别)。"""
+def _make_fake_h5(path: Path, size_mb: int = 1) -> None:
+    """写一个 1MB HDF5 magic 占位文件(Phase 4 L4)。"""
     path.parent.mkdir(parents=True, exist_ok=True)
     magic = b"\x89HDF\r\n\x1a\n"
-    with path.open("wb") as f:
-        f.write(magic)
-        f.write(b"\x00" * (size_mb * 1024 * 1024 - len(magic)))
+    path.write_bytes(magic)
+    os.truncate(path, size_mb * 1024 * 1024)
 
 
-def _make_fake_pt(path: Path, size_mb: int) -> None:
-    """写一个带 zip magic 的 N MB 文件(.pt/.pth 是 zip 格式)。"""
+def _make_fake_pt(path: Path, size_mb: int = 1) -> None:
+    """写一个 1MB zip magic 占位文件(Phase 4 L4)。"""
     path.parent.mkdir(parents=True, exist_ok=True)
-    # 用 zipfile 写一个空的 zip,再补齐到目标大小
     with zipfile.ZipFile(path, "w") as zf:
         zf.writestr("dummy.txt", "x")
-    with path.open("rb+") as f:
-        f.seek(0, os.SEEK_END)
-        cur = f.tell()
-        target = size_mb * 1024 * 1024
-        f.write(b"\x00" * (target - cur))
+    os.truncate(path, size_mb * 1024 * 1024)
 
 
-def test_try_load_succeeds_with_fake_esm2(tmp_path):
+def test_try_load_succeeds_with_fake_esm2(tmp_path, monkeypatch):
     override_vendor_root(tmp_path / "vendor_models")
+    # L4:临时降阈值到 1MB,case 写 1MB 即可触发
+    monkeypatch.setattr(ESM2Loader, "min_size_mb", 1)
     esm2 = ESM2Loader()
-    # ESM2-150M 阈值 >= 500MB,测试用 600MB 触发
-    _make_fake_safetensors(esm2.vendor_dir / "model.safetensors", size_mb=600)
+    _make_fake_safetensors(esm2.vendor_dir / "model.safetensors")  # 默认 1MB
 
     handle = esm2.try_load()
     assert handle is not None
     assert handle.name == "esm2-150m"
     assert handle.format_hint == "safetensors"
-    assert handle.size_bytes >= 500 * 1024 * 1024
+    assert handle.size_bytes >= 1 * 1024 * 1024
 
 
-def test_try_load_succeeds_with_fake_spliceai(tmp_path):
+def test_try_load_succeeds_with_fake_spliceai(tmp_path, monkeypatch):
     override_vendor_root(tmp_path / "vendor_models")
+    monkeypatch.setattr(SpliceAILoader, "min_size_mb", 1)
     spliceai = SpliceAILoader()
-    # SpliceAI 阈值 >= 20MB,测试用 25MB 触发
-    _make_fake_h5(spliceai.vendor_dir / "SpliceAI_hg38_model.h5", size_mb=25)
+    _make_fake_h5(spliceai.vendor_dir / "SpliceAI_hg38_model.h5")  # 默认 1MB
 
     assert spliceai.is_available() is True
     handle = spliceai.try_load()
@@ -168,11 +160,11 @@ def test_try_load_succeeds_with_fake_spliceai(tmp_path):
     assert handle.format_hint == "h5"
 
 
-def test_try_load_succeeds_with_fake_splice_transformer(tmp_path):
+def test_try_load_succeeds_with_fake_splice_transformer(tmp_path, monkeypatch):
     override_vendor_root(tmp_path / "vendor_models")
+    monkeypatch.setattr(SpliceTransformerLoader, "min_size_mb", 1)
     st = SpliceTransformerLoader()
-    # SpliceTransformer 阈值 >= 200MB,测试用 250MB 触发
-    _make_fake_pt(st.vendor_dir / "model.pt", size_mb=250)
+    _make_fake_pt(st.vendor_dir / "model.pt")  # 默认 1MB
 
     assert st.is_available() is True
     handle = st.try_load()

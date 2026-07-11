@@ -71,10 +71,13 @@ class LocalLLMLoader(ModelLoader):
     model_size_mb = 4500
     min_size_mb = 3500
 
-    def __init__(self) -> None:
+    def __init__(self, min_size_mb: int | None = None) -> None:
         # 不调用 super().__init__():基类会把 subdir_name 接到 vendor/models/ 下,
         # 而我们要的是 vendor/llm/。这里直接 override vendor_dir,跳过基类拼接。
         self.vendor_dir = _DEFAULT_VENDOR_LLM
+        # Phase 4 L4:min_size_mb 可注入(测试时传 1MB,产品保持 3500MB 硬阈值)
+        if min_size_mb is not None:
+            self.min_size_mb = min_size_mb
 
     def _candidate_files(self) -> list[Path]:
         """返回所有可能的 GGUF 路径(单文件 + 分片两种风格)。"""
