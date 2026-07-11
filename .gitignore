@@ -45,6 +45,21 @@ apps/api/vendor/models/**/*.ckpt
 apps/api/vendor/models/**/*.onnx
 apps/api/vendor/models/**/*.gguf
 apps/api/vendor/models/**/*.tflite
+# LLM 权重(Qwen2.5-7B 等,4.36 GB 量级)
+apps/api/vendor/llm/*.gguf
+apps/api/vendor/llm/*.bin
+# vendored python wheels(uv/pip 装包缓存,运行时重装)
+apps/api/vendor/wheels/
+# vendored proto-language 分析包(完整 repo,几十 MB;新机器重新 vendor)
+# 默认全 ignore,只保留 README/LICENSE/pyproject.toml 让开发者知道怎么用它
+apps/api/vendor/proto-language/
+!apps/api/vendor/proto-language/README.md
+!apps/api/vendor/proto-language/LICENSE
+!apps/api/vendor/proto-language/pyproject.toml
+!apps/api/vendor/proto-language/.gitignore
+
+# 误操作产生的嵌套目录(2026-07-11 已清)
+apps/apps/
 
 # 环境配置
 .env
