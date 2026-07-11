@@ -30,6 +30,11 @@ jobs:
           cache: pnpm
       - name: Install
         run: pnpm install --frozen-lockfile
+      # changesets 内部会 git commit,需要 author 身份
+      - name: Configure git
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
       - name: Apply changesets
         id: changesets
         uses: changesets/action@v1
