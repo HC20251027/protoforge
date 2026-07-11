@@ -61,6 +61,10 @@ apps/api/vendor/proto-language/
 # 误操作产生的嵌套目录(2026-07-11 已清)
 apps/apps/
 
+# Tauri 签名私钥(本地生成,不入 git,推到 GitHub Secrets)
+apps/api/.tauri/*.key
+apps/api/.tauri/*.key.pub
+
 # 环境配置
 .env
 .env.local

@@ -23,6 +23,8 @@ dev-dependencies = [
     "pytest-cov>=5.0.0",
     "httpx>=0.27.0",
     "ruff>=0.6.0",
+    # B1 设 GitHub Secret 的本地脚本依赖(CI 用 gh CLI 不需要)
+    "pynacl>=1.6.2",
 ]
 
 # Phase 3 Task 1.2: ML 模型加载器(接口稳定,不强制装 ML 框架)
