@@ -1,0 +1,42 @@
+# @protoforge/web
+
+## 0.1.1
+
+### Patch Changes
+
+- [`63cbb53`](https://github.com/HC20251027/protoforge/commit/63cbb53840e20a99f2eb7528d4541c41fe6924fe) Thanks [@HC20251027](https://github.com/HC20251027)! - # Phase 4 B1: Tauri 签名密钥 + GitHub Secret 工具链
+
+  ## DevOps
+
+  - **`apps/api/scripts/set_secret.py`** - 用 libsodium (PyNaCl) SealedBox 加密 + GitHub REST API 设仓库 Secret。本地开发者配 `TAURI_SIGNING_PRIVATE_KEY` / `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` 一次的工具。CI release.yml 不依赖此脚本(用 `${{ secrets.* }}` 直接读)。
+  - **`apps/api/.tauri/README.md`** - Tauri 签名密钥目录说明。私钥 `*.key` / `*.key.pub` 通过新增的 `.gitignore` 规则不入 git,只能通过 `set_secret.py` 推到 GitHub Secrets。
+  - **pre-commit gitleaks 改 local hook** - 用本机或项目 `apps/api/.cache/bin/gitleaks.exe` 二进制跑(8.30.1,约 30 MB),不再拉 1GB+ docker 镜像。Windows + macOS + Linux 一致行为。
+  - **`pynacl>=1.6.2`** 加进 `apps/api/pyproject.toml` 的 `dev-dependencies`(只本地脚本需要,产品 bundle 不带)。
+  - **`@changesets/cli` + `@changesets/changelog-github`** 加进根 `devDependencies` - 修 GitHub Actions `Apply changesets` step `Command "changeset" not found` 错误。
+  - **`.changeset/config.json`** - `repo` 从 `protoforge/protoforge` 占位 改 `HC20251027/protoforge`;`ignore` 从 `apps/desktop` 路径 改 `@protoforge/desktop` 包名。
+  - **`apps/api/scripts/{trigger_workflow,list_runs,run_jobs,set_branch_protection}.{py,cmd}`** - GitHub Actions 调试与配置工具(开发者本地,不入产品路径)。
+
+- [`4083915`](https://github.com/HC20251027/protoforge/commit/4083915b91cf666c1109d42c2b520b418678a9a8) Thanks [@HC20251027](https://github.com/HC20251027)! - # Phase 4: P1 fixes + quality debt cleanup
+
+  ## Security
+
+  - **API key encryption upgraded to cryptography Fernet** (was base64 fallback). Production API keys now encrypted at rest, key persisted to `.protoforge/.protoforge_key`. base64 fallback retained with explicit `UserWarning` when `cryptography` is missing.
+
+  ## Bug fixes
+
+  - **GGUF v3 magic byte fix**: `loader.py` now reads correct `b"\x03GGUF"` header (was `b"GGUF"`). Players with real Qwen2.5-7B models will no longer see silent load failure; magic mismatch now raises `LLMUnavailable` with explicit message.
+  - **detect_hardware() removed**: 4 difficulty tiers are now decoupled from hardware detection per Phase 3 decision N2. `app.proto.profile` module deleted; `from app.proto import *` no longer exports hardware-related symbols.
+
+  ## Quality
+
+  - **21 historical F401 unused imports cleaned** (17 auto-fixed by `ruff --fix`, 4 manual). CI ruff now fails on lint errors (was `|| true`).
+  - **CI/CD infrastructure**: 4-job GitHub Actions workflow (web/api/shared/security), release workflow with tauri-action for 3-platform builds, dependabot weekly, CODEOWNERS, PR/issue templates, pre-commit hooks (ruff + gitleaks + yamllint + actionlint).
+  - **Vendor SHA256 verification script** (`scripts/verify_vendor.py`) added; all vendor resources now have `.sha256` checksum files.
+  - **Subdirectory READMEs** added for `apps/api`, `apps/web`, `apps/desktop`, `packages/shared` to onboard new developers faster.
+
+  ## Testing infrastructure
+
+  - **L4 fixture optimization**: pytest fixtures switched to `min_size_mb=1` injection on `LocalLLMLoader`, reducing single-run pytest disk write from **15 GB → 0.6 GB** (25x reduction). Running the full 220-test suite no longer risks filling the C drive.
+
+- Updated dependencies [[`4083915`](https://github.com/HC20251027/protoforge/commit/4083915b91cf666c1109d42c2b520b418678a9a8)]:
+  - @protoforge/shared@0.1.1

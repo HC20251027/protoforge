@@ -9,6 +9,6 @@
   "baseBranch": "main",
   "updateInternalDependencies": "patch",
   "ignore": [
-    "apps/desktop"
+    "@protoforge/desktop"
   ]
 }

@@ -65,6 +65,12 @@ apps/apps/
 apps/api/.tauri/*.key
 apps/api/.tauri/*.key.pub
 
+# pnpm 本地缓存(项目内 store/cache 路径,不入 git)
+.pnpm-store/
+.pnpm-cache/
+.npmrc
+# pnpm store/cach 跟项目根平级时
+
 # 环境配置
 .env
 .env.local

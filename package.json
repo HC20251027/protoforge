@@ -9,7 +9,12 @@
     "dev:desktop": "pnpm --filter @protoforge/desktop dev",
     "build:web": "pnpm --filter @protoforge/web build",
     "test": "pnpm -r run test",
-    "lint": "pnpm -r run lint"
+    "lint": "pnpm -r run lint",
+    "changeset": "changeset"
+  },
+  "devDependencies": {
+    "@changesets/cli": "^2.27.0",
+    "@changesets/changelog-github": "^0.5.0"
   },
   "engines": {
     "node": ">=20",
