@@ -47,10 +47,9 @@
 
 **恢复步骤**: 按 `docs/superpowers/plans/2026-08-03-phase4-b2-release-green.md` 执行 —— 删僵尸 changeset → 新建正确 changeset(`@protoforge/web` + `@protoforge/shared`)→ push(GFW 重试)→ workflow_dispatch → 监控 4 tauri job 全绿。
 
-**⚠️ 阻塞**: GitHub PAT token 已失效(2026-08-03 发现,401 Bad credentials,疑因嵌在 git remote URL 被 GitHub 自动撤销)。恢复前需:
-1. 用户提供新 token(scope: `repo` + `workflow`)
-2. 修复 git remote(去掉 URL 内嵌 token,改用凭证管理器或 SSH)
-3. 更新本文档 + issue #1
+**挂起跟踪**: issue #10 (https://github.com/HC20251027/protoforge/issues/10)
+
+**⚠️ Token 备忘**: 2026-08-03 曾因 PAT 嵌 git remote URL 被 GitHub 自动撤销(token 泄露检测)。已换新 token 并更新 remote;若再失效,需用户重新生成(scope: `repo` + `workflow`),并建议改用凭证管理器或 SSH 而非 URL 内嵌。
 
 ## 5. 测试基线
 
