@@ -30,14 +30,18 @@
     "shortDescription": "ProtoForge — gamified synthetic biology crowdsourcing",
     "longDescription": "ProtoForge is a desktop game where players forge novel protein sequences through a community-driven synthetic biology pipeline. Embeds Python + ML models + Qwen2.5-7B local LLM.",
     "icon": [
-      "icons/icon.png"
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.icns",
+      "icons/icon.ico"
     ],
     "externalBin": [
       "binaries/python-bundle/python"
     ],
     "resources": [
-      "../api/vendor/**",
-      "../api/.venv/**/site-packages/proto_language/**"
+      "../api/vendor/",
+      "binaries/python-bundle/"
     ],
     "publisher": "ProtoForge",
     "copyright": "Copyright (c) 2026 ProtoForge"

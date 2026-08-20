@@ -25,7 +25,6 @@ apps/desktop/src-tauri/target/
 # 真实发布产物不出现在仓库中,INSTALL.md 仍然跟踪以让测试验证布局。
 apps/desktop/src-tauri/binaries/python-bundle/
 !apps/desktop/src-tauri/binaries/python-bundle/INSTALL.md
-!apps/desktop/src-tauri/binaries/python-bundle/python
 
 # 项目运行时数据(不进 git)
 .protoforge/
