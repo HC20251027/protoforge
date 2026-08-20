@@ -1,5 +1,21 @@
 # @protoforge/web
 
+## 0.1.3
+
+### Patch Changes
+
+- [`5456e3b`](https://github.com/HC20251027/protoforge/commit/5456e3b631998b555aff0502b54e2a4494609f01) Thanks [@HC20251027](https://github.com/HC20251027)! - # Phase 4 B2: Release workflow 全绿验证
+
+  ## DevOps
+
+  - **修复 release.yml outputs 大小写 bug**: `hasChangesets` → `has_changesets`(step 输出名不匹配导致 tauri job 守卫永远 false)。
+  - **version job 直接 commit 到 main**: 替代 changesets/action PR 流程(修 `Resource not accessible by integration`)。
+  - **tauri job checkout `ref: main`**: 编译 version bump 后的最新代码。
+  - 触发完整 release 流水线验证:Tauri 三平台(windows/macos x2/ubuntu)签名编译 + Release 草稿。
+
+- Updated dependencies [[`5456e3b`](https://github.com/HC20251027/protoforge/commit/5456e3b631998b555aff0502b54e2a4494609f01)]:
+  - @protoforge/shared@0.1.3
+
 ## 0.1.2
 
 ### Patch Changes
