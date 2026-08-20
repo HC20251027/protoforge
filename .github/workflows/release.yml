@@ -15,8 +15,7 @@ jobs:
     name: changesets version
     runs-on: ubuntu-latest
     outputs:
-      has_changesets: ${{ steps.changesets.outputs.hasChangesets }}
-      published: ${{ steps.changesets.outputs.published }}
+      has_changesets: ${{ steps.changesets.outputs.has_changesets }}
     steps:
       - uses: actions/checkout@v4
         with:
