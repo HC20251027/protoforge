@@ -53,7 +53,7 @@ jobs:
   tauri:
     name: tauri (${{ matrix.platform }})
     needs: version
-    if: needs.version.outputs.has_changesets == 'true'
+    if: needs.version.outputs.has_changesets == 'true' || github.event_name == 'workflow_dispatch'
     strategy:
       fail-fast: false
       matrix:
@@ -95,6 +95,9 @@ jobs:
         run: pnpm install --frozen-lockfile
 
       # Python sidecar 编译 + 嵌入
+      - name: Setup uv
+        uses: astral-sh/setup-uv@v5
+
       - name: Sync Python deps
         working-directory: apps/api
         run: uv sync --frozen
