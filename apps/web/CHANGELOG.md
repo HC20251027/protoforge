@@ -1,5 +1,20 @@
 # @protoforge/web
 
+## 0.1.4
+
+### Patch Changes
+
+- [`7b688b3`](https://github.com/HC20251027/protoforge/commit/7b688b3c5686571c079e452ded1b45dcf773b2d7) Thanks [@HC20251027](https://github.com/HC20251027)! - # Phase 4 B2: Release workflow 全绿验证(第 2 轮)
+
+  ## DevOps
+
+  - **修复 tauri 生产构建找不到前端资源**: `frontendDist` 从 `../src` 改为 `../../web/dist` + 加 `beforeBuildCommand: pnpm --filter @protoforge/web build`。
+  - **修复 web 构建 TS 报错**: `ForgeResult` 补 `errors: string[]`、`tsconfig` 加 `vite/client` types、测试文件修严格空检查。
+  - 触发完整 release 流水线验证:Tauri 三平台(windows/macos x2/ubuntu)签名编译 + Release 草稿。
+
+- Updated dependencies [[`7b688b3`](https://github.com/HC20251027/protoforge/commit/7b688b3c5686571c079e452ded1b45dcf773b2d7)]:
+  - @protoforge/shared@0.1.4
+
 ## 0.1.3
 
 ### Patch Changes
