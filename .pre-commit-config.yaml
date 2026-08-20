@@ -1,6 +1,11 @@
 # ProtoForge pre-commit hooks 配置
 # 设计原则:pre-commit 只跑秒级 hooks,重量级检查(单测 / 类型 / 全量 lint)交给 CI
 
+# 用系统 Python 创建钩子环境(uv 托管 Python 的 virtualenv 在 Windows 上
+# 会因缺 seed 缓存联网下载而挂起,系统 Python 自带 virtualenv + 本地缓存)
+default_language_version:
+  python: python3
+
 repos:
   # ==================== 通用(语言无关) ====================
   - repo: https://github.com/pre-commit/pre-commit-hooks

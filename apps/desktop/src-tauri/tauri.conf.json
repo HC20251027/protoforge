@@ -5,9 +5,9 @@
   "identifier": "com.protoforge.desktop",
   "build": {
     "beforeDevCommand": "",
-    "beforeBuildCommand": "",
+    "beforeBuildCommand": "pnpm --filter @protoforge/web build",
     "devUrl": "http://localhost:1420",
-    "frontendDist": "../src"
+    "frontendDist": "../../web/dist"
   },
   "app": {
     "windows": [
@@ -37,7 +37,7 @@
     ],
     "resources": [
       "../api/vendor/**",
-      "../api/.venv/Lib/site-packages/proto_language/**"
+      "../api/.venv/**/site-packages/proto_language/**"
     ],
     "publisher": "ProtoForge",
     "copyright": "Copyright (c) 2026 ProtoForge"

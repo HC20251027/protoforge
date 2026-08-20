@@ -570,11 +570,11 @@ describe('ForgePage · auto-save to Gallery (Phase 3 Task 6 P0-B1)', () => {
     const body = (globalThis as { __lastGalleryCreateBody?: { mission_id: string; title: string; ritual: string; intron: string; fasta: string; risk_passed: boolean } })
       .__lastGalleryCreateBody;
     expect(body).toBeTruthy();
-    expect(body.mission_id).toBe('polar-glow-v1');
-    expect(body.intron).toBe('GTATGCATGCAG');
-    expect(body.fasta).toBe('>protoforge\nGTATGCATGCAG\n');
-    expect(body.ritual).toBeTruthy();
-    expect(body.risk_passed).toBe(true);
+    expect(body!.mission_id).toBe('polar-glow-v1');
+    expect(body!.intron).toBe('GTATGCATGCAG');
+    expect(body!.fasta).toBe('>protoforge\nGTATGCATGCAG\n');
+    expect(body!.ritual).toBeTruthy();
+    expect(body!.risk_passed).toBe(true);
   });
 
   it('shows "✅ 作品已保存到 Gallery" success toast after forge', async () => {

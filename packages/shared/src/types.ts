@@ -85,6 +85,8 @@ export interface ForgeResult {
   scores: ScoreVector;
   risk_flags: RiskFlag[];
   passed_gate: boolean;
+  // Phase 3 Task 6 P0-A2:引擎层计算异常透传(空 = 成功)
+  errors: string[];
   // Phase 3 Task 5:通关后 Steam Workshop 自动上传状态
   upload?: UploadStatus;
 }
