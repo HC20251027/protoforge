@@ -1,5 +1,21 @@
 # @protoforge/web
 
+## 0.1.5
+
+### Patch Changes
+
+- [`eb65a9b`](https://github.com/HC20251027/protoforge/commit/eb65a9bf8a7a16a5e74baa107db90fac330b8a93) Thanks [@HC20251027](https://github.com/HC20251027)! - # Phase 4 B2: Tauri 三平台编译全绿
+
+  ## DevOps
+
+  - **externalBin 侧车二进制**: `bundle_python.py` 生成 `python-{target-triple}` 命名二进制,`release.yml` 传 `TAURI_TARGET_TRIPLE` 环境变量,修复 Tauri "resource path doesn't exist" 错误。
+  - **resources glob 修复**: `tauri.conf.json` 用合法 glob(`../api/vendor/`、`binaries/python-bundle/`)替代无效的 `dir/**`。
+  - **正式图标**: 生成多尺寸 icon.png / icon.ico / icon.icns,替换占位图标。
+  - 验证 Tauri 三平台(windows / macos x2 / ubuntu)签名编译 + Release 草稿。
+
+- Updated dependencies [[`eb65a9b`](https://github.com/HC20251027/protoforge/commit/eb65a9bf8a7a16a5e74baa107db90fac330b8a93)]:
+  - @protoforge/shared@0.1.5
+
 ## 0.1.4
 
 ### Patch Changes
