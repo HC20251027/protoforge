@@ -40,7 +40,7 @@
       "binaries/python-bundle/python"
     ],
     "resources": [
-      "../api/vendor/",
+      "../../api/vendor/",
       "binaries/python-bundle/"
     ],
     "publisher": "ProtoForge",

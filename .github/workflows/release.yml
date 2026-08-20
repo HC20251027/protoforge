@@ -111,6 +111,10 @@ jobs:
           TAURI_TARGET_TRIPLE: ${{ matrix.target }}
         run: python scripts/bundle_python.py
 
+      # 交叉编译目标(如 macos Intel 在 Apple Silicon runner 上)需显式安装
+      - name: Install Rust target
+        run: rustup target add ${{ matrix.target }}
+
       # Tauri 编译 + 签名 + 上传 Release
       - name: Build Tauri bundle
         uses: tauri-apps/tauri-action@v0
