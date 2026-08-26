@@ -260,7 +260,10 @@ pub fn launch_python_sidecar(
         port
     );
 
-    tauri_plugin_shell::ShellExt::shell(&app)
+    // tauri-plugin-shell v2 的 spawn() 返回
+    // `Result<(Receiver<CommandEvent>, CommandChild), Error>`,
+    // 需解构出 CommandChild 并转换错误类型为 tauri::Error。
+    let (_event_rx, child) = tauri_plugin_shell::ShellExt::shell(&app)
         .command(SIDECAR_BIN_NAME)
         .args([
             "-m",
@@ -279,8 +282,9 @@ pub fn launch_python_sidecar(
         .spawn()
         .map_err(|e| {
             log::error!("Failed to spawn Tauri Python sidecar: {e}");
-            e
-        })
+            tauri::Error::Anyhow(anyhow::Error::new(e))
+        })?;
+    Ok(child)
 }
 
 /// 计算 sidecar 进程的 ``current_dir``(它要在 ``apps/api`` 下面跑,
